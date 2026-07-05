@@ -6,8 +6,9 @@ from PySide6.QtWidgets import (
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, session):
         super().__init__()
+        self.session = session
 
         self.setWindowTitle("Psych AI")
         self.resize(800, 600)
@@ -20,4 +21,5 @@ class MainWindow(QMainWindow):
 
 
     def start_session(self):
+        self.session.start()
         self.status.setText("Status: Session started")
