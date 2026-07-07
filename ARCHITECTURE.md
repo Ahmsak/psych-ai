@@ -7,7 +7,8 @@
 
 - App
 - UI
-- Orchestrator
+- Orchestrator. The Orchestrator is the only component that coordinates other modules.
+Modules never communicate directly with each other.
 - Session
 - Memory
 - Agents

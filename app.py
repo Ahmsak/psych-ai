@@ -2,14 +2,17 @@ from PySide6.QtWidgets import QApplication
 
 from ui.window import MainWindow
 
-from session.session import Session
+#from session.session import Session
+
+from orchestrator.orchestrator import Orchestrator
 
 
 class App:
     def __init__(self):
         self.qt_app = QApplication([])
-        self.session = Session()
-        self.window = MainWindow(self.session)
+        self.orchestrator = Orchestrator()
+        #self.session = Session()
+        self.window = MainWindow(self.orchestrator)
         
 
     def run(self):
