@@ -40,9 +40,6 @@ LLM-подключение (llm/ пуст, следующий пункт ROADMAP
 
 ## Known Issues
 
-- КРИТИЧНО: работа Sprint 1–3.6 не закоммичена в git (capture/,
-  transcription/, docs/, tools/ — untracked; последний коммит f4b34e8).
-  До git add/commit/push единственная копия — локальная машина.
 - PySide6 не импортируется текущим интерпретатором Python 3.12
   (ModuleNotFoundError), хотя указан в requirements.txt; в __pycache__
   есть артефакты cpython-313 — вероятно, GUI-зависимости ставились в
