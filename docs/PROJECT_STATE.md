@@ -20,12 +20,14 @@
   завершение. Проверено e2e на реальной машине.
 - Sprint 3.5: система знаний проекта (docs/, START_HERE.md,
   tools/verify_environment.py).
-- Sprint 3.6: аудит и укрепление системы знаний
-  (DEVELOPMENT_WORKFLOW.md, DEFINITION_OF_DONE.md, git/GitHub-правила).
+- Sprint 3.6: аудит и укрепление системы знаний: DEVELOPMENT_WORKFLOW,
+  DEFINITION_OF_DONE, DISASTER_RECOVERY, BACKUP_STRATEGY, VERSIONING
+  (предложение), GLOSSARY, OWNER_DECISIONS, расширенный .gitignore;
+  вся работа Sprint 1–3.6 закоммичена и запушена в GitHub.
 
 ## Current Sprint
 
-Sprint 3.6 — Audit / Hardening of Project Knowledge System (завершается).
+Sprint 3.6 — Audit / Hardening of Project Knowledge System (завершён).
 
 ## Current Goal
 
@@ -72,4 +74,4 @@ LLM-подключение (llm/ пуст, следующий пункт ROADMAP
 
 ## Last Update
 
-2026-07-25 — Sprint 3.5 (создание системы знаний).
+2026-07-25 — Sprint 3.6 завершён (аудит и укрепление системы знаний).
