@@ -64,6 +64,7 @@ class MicRecorder:
             input_device_index=int(info["index"]))
         self.frames: List[bytes] = []
         self.rms_max = 0.0
+        self.errors: List[str] = []
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._loop, daemon=True)
 
@@ -74,7 +75,8 @@ class MicRecorder:
         while not self._stop.is_set():
             try:
                 data = self.stream.read(CHUNK, exception_on_overflow=False)
-            except Exception:
+            except Exception as exc:
+                self.errors.append(f"mic read failed: {exc!r}")
                 break
             self.frames.append(data)
             r = _rms(data)
@@ -202,6 +204,7 @@ def main() -> None:
                 "channels": mic.channels, "duration_sec": mic_dur,
                 "rms_max": round(mic.rms_max, 1),
                 "audio_captured": mic.rms_max > 1.0,
+                "errors": mic.errors,
                 "role": "outgoing: local user's voice"},
         "loopback": {"device": loop._device_info["name"],
                      "sample_rate": loop.sample_rate,
@@ -209,6 +212,7 @@ def main() -> None:
                      "duration_sec": loop_dur,
                      "rms_max": round(loop_rms["max"], 1),
                      "audio_captured": loop_rms["max"] > 1.0,
+                     "errors": [],
                      "role": "incoming: remote party + system sounds"},
     }
     with open(os.path.join(base, "manifest.json"), "w", encoding="utf-8") as f:
@@ -226,6 +230,7 @@ def main() -> None:
         f"captured={'YES' if loop_rms['max'] > 1.0 else 'NO'}",
         f"MIC transcription:      {len(mic_text)} chars",
         f"LOOPBACK transcription: {len(loop_text)} chars",
+        f"Errors: {mic.errors or 'none'}",
         f"Artifacts: {base}",
     ]
     log = "\n".join(log_lines) + "\n"
