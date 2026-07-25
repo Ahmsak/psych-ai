@@ -26,7 +26,7 @@ PyAudioWPatch (WASAPI-захват).
 
 ## Где что искать
 - Архитектура и решения: docs/CONSTITUTION.md,
-  docs/ARCHITECTURAL_DECISIONS.md (ADR)
+  docs/ARCHITECTURAL_DECISIONS.md (ADR-001..005) и docs/adr/ (ADR-006+)
 - Спецификации функций: docs/specs/
 - Состояние проекта: docs/PROJECT_STATE.md, журнал: docs/SESSION.md
 - Определение готовности: docs/DEFINITION_OF_DONE.md
