@@ -136,3 +136,21 @@ def test_session_stage_uses_temp_file_not_artifact(tmp_path):
     stage_session(base)
     # serialization round-trip must go to temp, not create session.json here
     assert not os.path.exists(os.path.join(base, "session.json"))
+
+
+def test_conversation_stage_flags_txt_segments_mismatch(tmp_path):
+    """INV-001: non-empty transcription + empty segments must FAIL."""
+    from run_integration_validation import stage_conversation
+    base = str(tmp_path / "20260101_000003_timeline")
+    _build_experiment(base)
+    # Simulate the hallucination-on-silence failure on the mic track:
+    # empty segments but a non-empty transcription file.
+    with open(os.path.join(base, "mic_segments.json"), "w",
+              encoding="utf-8") as f:
+        json.dump([], f)
+    with open(os.path.join(base, "mic_transcription.txt"), "w",
+              encoding="utf-8") as f:
+        f.write("Продолжение следует...")
+    r = stage_conversation(base)
+    assert r.status == FAIL
+    assert any("0 segments" in msg for _, msg in r.notes)

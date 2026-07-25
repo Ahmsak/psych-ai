@@ -269,11 +269,14 @@ def main() -> None:
     loop_dur = _write_unified_wav(loop_wav, loop_frames)
 
     print(f"[timeline] transcribing mic.wav ({mic_dur}s)...")
-    mic_text = _transcribe_wav(mic_wav, args.model, args.language)
     mic_segs = _transcribe_segments(mic_wav, args.model, args.language)
     print(f"[timeline] transcribing loopback.wav ({loop_dur}s)...")
-    loop_text = _transcribe_wav(loop_wav, args.model, args.language)
     loop_segs = _transcribe_segments(loop_wav, args.model, args.language)
+    # INV-001 fix: derive transcription text from the SAME segment path so
+    # the .txt and *_segments.json never disagree. The old StreamingTranscriber
+    # path hallucinated text on near-silence, masking empty-segment tracks.
+    mic_text = "\n".join(s["text"] for s in mic_segs)
+    loop_text = "\n".join(s["text"] for s in loop_segs)
     for name, text in (("mic_transcription.txt", mic_text),
                        ("loopback_transcription.txt", loop_text)):
         with open(os.path.join(base, name), "w", encoding="utf-8") as f:

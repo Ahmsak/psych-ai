@@ -186,6 +186,23 @@ def stage_conversation(base: str) -> StageReport:
         r.warn("conversation has no utterances")
     else:
         r.ok(f"{len(utts)} utterances built")
+
+    # INV-001: per-track transcription/segments consistency (catches the
+    # hallucination-on-silence failure that masked problem #1).
+    for stream in ("microphone", "loopback"):
+        seg_path = os.path.join(base, f"{'mic' if stream=='microphone' else 'loopback'}_segments.json")
+        tr_path = os.path.join(base, f"{'mic' if stream=='microphone' else 'loopback'}_transcription.txt")
+        if os.path.exists(seg_path) and os.path.exists(tr_path):
+            try:
+                seg_n = len(_load_json(seg_path))
+            except Exception:  # noqa: BLE001
+                seg_n = None
+            tr_has = os.path.getsize(tr_path) > 0
+            if seg_n is not None and tr_has and seg_n == 0:
+                r.fail(f"{stream}: transcription present but 0 segments "
+                       f"(hallucination on silence — see INV-001)")
+
+    if utts:
         starts = [u.start_time for u in utts]
         if starts == sorted(starts):
             r.ok("utterances ordered by start_time")

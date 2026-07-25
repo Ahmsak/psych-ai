@@ -118,6 +118,26 @@ def validate(base: str) -> int:
         if errs:
             print(f"WARN: {stream}: device errors reported: {errs}")
 
+        # INV-001: transcription text vs segments consistency. A non-empty
+        # .txt with empty segments means the text path hallucinated on a
+        # (near-)silent track — the failure that masked problem #1.
+        tr_has = os.path.exists(tr) and os.path.getsize(tr) > 0
+        seg_path = os.path.join(base, s.get("segments", f"{stream}_segments.json"))
+        seg_n = None
+        if os.path.exists(seg_path):
+            try:
+                with open(seg_path, encoding="utf-8") as sf:
+                    seg_n = len(json.load(sf))
+            except (ValueError, OSError):
+                seg_n = None
+        if seg_n is not None:
+            _check(not (tr_has and seg_n == 0),
+                   f"{stream}: transcription/segments consistent "
+                   f"(segments={seg_n})",
+                   f"{stream}: transcription text present but 0 segments "
+                   f"(likely hallucination on silence — see INV-001)",
+                   failures)
+
     print(f"[check] {'ALL PASS' if not failures else f'{len(failures)} FAIL'}")
     return 0 if not failures else 1
 

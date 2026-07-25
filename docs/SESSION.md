@@ -4,6 +4,35 @@
 
 ---
 
+## 2026-07-25 — Sprint 10.1: Integration Investigation (INV-001)
+
+### Расследование (эксперимент 20260725_181758_timeline)
+- Первый реальный e2e: Overall WARNING, 0 FAIL. Архитектура работоспособна.
+- Проблема №1 (psychologist=0): причина — почти пустой сигнал микрофона
+  (peak 3.6%) → Whisper 0 сегментов. НЕ баг конвейера. Маскировалась
+  расхождением двух путей транскрипции (StreamingTranscriber галлюцинировал
+  текст на тишине, сегментный путь давал 0).
+- Проблема №2 (обе стороны на MIC): смешивание ДО PsychAI (corr огибающих
+  0.952 по offset; в коде микса нет). Аудио-тракт Windows/Realtek/акустика.
+  По правилу — не исправляем, только документируем.
+- Отчёты: docs/investigations/INV-001-*.md (part1/part2/part3-fix).
+
+### Исправлено (только №1, минимально, без рефакторинга/смены архитектуры)
+- tools/run_timeline_experiment.py: текст транскрипции берётся из того же
+  сегментного пути, что и *_segments.json (устранены галлюцинации-фантомы).
+- tools/check_experiment.py + run_integration_validation.py: sensor
+  «transcription/segments mismatch» (непустой .txt при 0 сегментов → FAIL).
+- tests/test_integration_harness.py: тест на этот рассинхрон. pytest 70 passed.
+- Артефакты эксперимента перегенерированы из имеющихся сегментов (без
+  повторного Whisper, без фабрикации): mic .txt пуст (честно),
+  conversation.json/Session/Statistics перестроены; harness Overall WARNING.
+
+### Архитектура Audio Capture НЕ менялась
+Оба дефекта во входном аудио (до PsychAI); захват отработал корректно.
+
+---
+
+
 ## 2026-07-25 — Sprint 10: Integration Harness (инженерный инструмент)
 
 ### Что сделано
