@@ -4,6 +4,39 @@
 
 ---
 
+## 2026-07-25 — Sprint 5: Unified Audio Timeline
+
+### Что сделано
+- SPEC-001 (docs/specs/) — контракт до реализации.
+- Единый формат аудио 48000 Гц / mono / PCM16 для ОБОИХ потоков
+  (loopback нативно 48к; mic ресемплится 44100→48000). Функция
+  to_unified() переиспользует линейный ресемпл/даунмикс.
+- tools/run_timeline_experiment.py — mic + loopback в едином формате,
+  временная шкала (record_start, first_frame_at, duration) на каждый
+  поток, metadata.json (session_id, created_at, unified_format, блоки
+  microphone/loopback). Запись metadata атомарна (tmp+os.replace).
+- Дорожки НЕ объединяются/не синхронизируются/не диаризуются (только
+  подготовка данных, см. ADR-006).
+- Sensor-first: tools/check_experiment.py — PASS/FAIL по измеримым
+  условиям (metadata, WAV-целостность, соответствие формату, наличие
+  записи, транскрипция при звуке). exit!=0 при FAIL.
+- pytest: tests/test_timeline.py (8 тестов: конверсия формата +
+  negative-кейсы детектора). Итого 25 passed, 2 deselected.
+- docs/EXPERIMENTS.md — формат хранения, metadata, единый формат,
+  подготовка к Timeline.
+- Реальный прогон (tone-probe): оба потока в 48к mono, обе транскрипции,
+  timing зафиксирован; check_experiment.py → ALL PASS (exit 0).
+
+### Что осталось
+- Владелец: реальный звонок (Telegram/WhatsApp) с
+  run_timeline_experiment.py для подтверждения на живом диалоге.
+
+### Следующий шаг
+- Ожидание указаний владельца. Объединение дорожек — будущий спринт.
+
+---
+
+
 ## 2026-07-25 — Architectural Improvements: R1, R3, R4, R5 (одобрено)
 
 ### Что сделано
