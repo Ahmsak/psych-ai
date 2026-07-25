@@ -4,6 +4,42 @@
 
 ---
 
+## 2026-07-25 — Sprint 7: Conversation Builder (первый продуктовый модуль)
+
+### Что сделано
+- SPEC-003 + ADR-008 (speaker по источнику; сегментные тайминги Whisper).
+- Data-слой: run_timeline_experiment.py дополнительно сохраняет
+  mic_segments.json / loopback_segments.json (нативные сегменты Whisper
+  start/end/text/confidence; текст не меняется); segments добавлен в
+  metadata и timeline tracks.
+- Продуктовый пакет conversation/ (НЕ tools/):
+  - model.py — Utterance (id, speaker, start_time, end_time, text,
+    source, confidence) + Conversation;
+  - builder.py — build_conversation (offset дорожки + seg.start,
+    сортировка по времени, speaker mic→psychologist/loopback→client) +
+    validate_conversation (проверки Задачи 5);
+  - __init__.py — API load_conversation()/write_conversation();
+  - conversation.json (атомарная запись) — источник данных для анализа.
+- Session.conversation (session_manager) — ленивая сборка без записи.
+- pytest: tests/test_conversation.py (14 тестов, вкл. negative). Итого
+  44 passed, 2 deselected.
+- Реальный e2e: прогон → segments → timeline → conversation.json;
+  2 реплики упорядочены, speaker по источнику, текст Whisper дословно,
+  confidence сохранён; Session.conversation OK.
+- docs: EXPERIMENTS.md (раздел Conversation), AGENTS.md (пакет
+  conversation/), ADR-008.
+
+### Ограничения соблюдены
+- Без LLM/GPT, эмоций, искажений, психологических выводов; текст Whisper
+  не изменялся; не диаризация (speaker по источнику); архитектура не
+  менялась (новый продуктовый модуль в оси Session).
+
+### Следующий шаг
+- Ожидание задания. Анализ разговора — будущий спринт (llm/).
+
+---
+
+
 ## 2026-07-25 — Sprint 6: Session Alignment (Timeline)
 
 ### Что сделано

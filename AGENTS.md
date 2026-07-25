@@ -15,6 +15,8 @@ PyAudioWPatch (WASAPI-захват).
 ## Структура проекта
 - capture/        — захват аудио (WASAPI loopback), вход в конвейер
 - transcription/  — STT (StreamingTranscriber), только распознавание
+- conversation/   — сборка структурированного диалога (продуктовый
+  модуль; conversation.json; без анализа/LLM)
 - orchestrator/   — координация жизненного цикла компонентов
 - llm/            — анализ текста (пока пусто, будущее)
 - ui/             — интерфейс (PySide6)

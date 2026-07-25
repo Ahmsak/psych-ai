@@ -34,27 +34,27 @@
 
 ## Current Sprint
 
-Sprint 6 — Session Alignment. Реализована единая временная модель
-разговора: timeline.json (timeline_start/end, tracks, offsets,
-artifacts) из metadata.json по ADR-007 (offset = first_frame_at −
-timeline_start); проверки согласованности; API загрузки
-(tools/session_manager.py: load_timeline/load_session). Объединения
-аудио/синхро/диаризации/LLM нет. pytest 33 passed. См. docs/EXPERIMENTS.md.
+Sprint 7 — Conversation Builder (первый продуктовый модуль). Пакет
+conversation/ собирает из двух транскрипций единый упорядоченный по
+времени диалог: модель Utterance/Conversation, builder (offset+seg.start,
+speaker по источнику), conversation.json (источник данных для анализа),
+API load_conversation() и Session.conversation, проверки согласованности.
+Без анализа/диаризации/LLM; текст Whisper не меняется (ADR-008). Data-слой
+(tools/) дополнительно пишет *_segments.json. pytest 44 passed.
 
-Sprint 5 — единый формат аудио (48к/mono/PCM16), metadata.json,
-временные метки, sensor-first проверки — завершён.
-
-Sprint 4.0 — двухпотоковый захват (mic + loopback), ADR-006.
+Sprint 6 — Session Alignment (timeline.json, offsets, API) — завершён.
+Sprint 5 — единый формат аудио, metadata.json — завершён.
+Sprint 4.0 — двухпотоковый захват (ADR-006) — завершён.
 
 ## Current Goal
 
-Единая временная модель (Timeline) как источник истины для Session:
-объективные offsets, проверки, единый API загрузки. Без анализа речи.
+Первый продуктовый модуль: структурированный диалог (conversation.json)
+как источник данных для будущего анализа. Без смысловой обработки.
 
 ## Next Goal
 
-Физическое объединение дорожек в единый диалог по Timeline (будущий
-спринт) — на основе timeline.json и session_manager.
+Анализ разговора (модуль llm/) на основе conversation.json — будущий
+спринт. Пока НЕ начат.
 
 
 

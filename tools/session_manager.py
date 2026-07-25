@@ -96,6 +96,20 @@ class Session:
     def track_names(self) -> List[str]:
         return list(self.tracks.keys())
 
+    @property
+    def conversation(self):
+        """Built Conversation for this session (Sprint 7 product module).
+
+        Lazily assembles the structured dialog via the conversation
+        package. No analysis/LLM — just the time-ordered dialog.
+        """
+        import sys
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if root not in sys.path:
+            sys.path.insert(0, root)
+        from conversation import load_conversation
+        return load_conversation(self.base_dir, write=False)
+
 
 def load_timeline(experiment_dir: Optional[str] = None) -> Dict:
     """Return the raw Timeline dict, building it if needed."""

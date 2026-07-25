@@ -70,6 +70,7 @@ def build_timeline(meta: dict) -> dict:
             "role": tm.get("role"),
             "wav": tm.get("wav"),
             "transcription": tm.get("transcription"),
+            "segments": tm.get("segments"),
             "stored_format": tm.get("stored_format"),
             "record_start": tm.get("record_start"),
             "first_frame_at": tm.get("first_frame_at"),

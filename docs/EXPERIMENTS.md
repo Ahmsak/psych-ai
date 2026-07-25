@@ -87,8 +87,35 @@ timeline повреждён (нет ключей / не парсится).
   если timeline.json нет; без сайд-эффектов записи);
 - `load_session([dir])` → объект Session с доступом к session_id,
   timeline_start/end, tracks, offsets, offset_of(), wav_path(),
-  transcription_path()/text(). Это структура для дальнейшей работы
-  (будущее объединение/UI/анализ) — источник истины для Session.
+  transcription_path()/text(), conversation. Это структура для
+  дальнейшей работы (будущее объединение/UI/анализ) — источник истины
+  для Session.
+
+## Conversation (Sprint 7, продуктовый модуль)
+Пакет `conversation/` (НЕ tools/ — первый продуктовый модуль) собирает
+из двух транскрипций единый упорядоченный по времени диалог. Без
+анализа/диаризации/LLM; текст Whisper не меняется (ADR-008).
+
+Данные о таймингах: `run_timeline_experiment.py` дополнительно сохраняет
+`mic_segments.json` / `loopback_segments.json` — нативные сегменты
+Whisper {start, end, text, confidence}.
+
+`conversation.json` — главный источник данных для будущего анализа:
+- `session_id`, `sprint`, `note`, `utterance_count`;
+- `utterances`: список реплик, каждая с id, speaker, start_time,
+  end_time, text, source, confidence. Отсортированы по start_time.
+- speaker по источнику: microphone → psychologist, loopback → client.
+- время реплики = offset дорожки (timeline) + seg.start.
+
+API:
+- `from conversation import load_conversation` →
+  `load_conversation([dir], write=True)` строит, проверяет и пишет
+  conversation.json;
+- `Session.conversation` (session_manager) — ленивая сборка без записи.
+
+Проверки (Задача 5, sensor-first): FAIL если реплики не по времени;
+нет speaker; нет text; conversation повреждён; conversation
+противоречит timeline (session_id / время вне границ).
 
 ## Sensor-first проверка
 `python tools/check_experiment.py [<dir>]` — измеримые PASS/FAIL:

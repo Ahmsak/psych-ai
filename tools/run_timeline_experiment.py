@@ -166,6 +166,43 @@ def _transcribe_wav(path: str, model: str, language: Optional[str]) -> str:
     return "\n".join(texts)
 
 
+def _transcribe_segments(path: str, model: str, language: Optional[str]) -> list:
+    """Transcribe a unified WAV and keep per-segment timing.
+
+    Returns a list of {start, end, text, confidence} using faster-whisper's
+    native segment timestamps. Text is NOT modified. This is the data layer
+    for the Conversation Builder (Sprint 7): timing is preserved, no
+    analysis is performed.
+    """
+    from faster_whisper import WhisperModel  # heavy dep, local import
+
+    wf = wave.open(path, "rb")
+    raw = wf.readframes(wf.getnframes())
+    rate = wf.getframerate()
+    wf.close()
+    audio = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+    if rate != 16000 and audio.size:
+        dst = int(round(audio.size * 16000 / rate))
+        audio = np.interp(np.linspace(0, audio.size - 1, dst),
+                          np.arange(audio.size), audio).astype(np.float32)
+
+    m = WhisperModel(model, device="cpu", compute_type="int8")
+    segments, _info = m.transcribe(audio, language=language, beam_size=1,
+                                   vad_filter=True)
+    out = []
+    for s in segments:
+        text = s.text.strip()
+        if not text:
+            continue
+        out.append({
+            "start": round(float(s.start), 3),
+            "end": round(float(s.end), 3),
+            "text": text,  # unchanged Whisper text
+            "confidence": round(float(getattr(s, "avg_logprob", 0.0)), 4),
+        })
+    return out
+
+
 def _iso(ts: Optional[float]) -> Optional[str]:
     return datetime.fromtimestamp(ts).isoformat() if ts else None
 
@@ -233,12 +270,19 @@ def main() -> None:
 
     print(f"[timeline] transcribing mic.wav ({mic_dur}s)...")
     mic_text = _transcribe_wav(mic_wav, args.model, args.language)
+    mic_segs = _transcribe_segments(mic_wav, args.model, args.language)
     print(f"[timeline] transcribing loopback.wav ({loop_dur}s)...")
     loop_text = _transcribe_wav(loop_wav, args.model, args.language)
+    loop_segs = _transcribe_segments(loop_wav, args.model, args.language)
     for name, text in (("mic_transcription.txt", mic_text),
                        ("loopback_transcription.txt", loop_text)):
         with open(os.path.join(base, name), "w", encoding="utf-8") as f:
             f.write(text)
+    # Per-segment timing (data layer for Conversation Builder, Sprint 7).
+    for name, segs in (("mic_segments.json", mic_segs),
+                       ("loopback_segments.json", loop_segs)):
+        with open(os.path.join(base, name), "w", encoding="utf-8") as f:
+            json.dump(segs, f, ensure_ascii=False, indent=2)
 
     unified = {"sample_rate": UNIFIED_RATE, "channels": UNIFIED_CHANNELS,
                "sample_width_bytes": UNIFIED_SAMPWIDTH, "encoding": "pcm_s16le"}
@@ -261,6 +305,7 @@ def main() -> None:
             "audio_captured": mic.rms_max > 1.0,
             "wav": "mic.wav",
             "transcription": "mic_transcription.txt",
+            "segments": "mic_segments.json",
             "errors": mic.errors,
         },
         "loopback": {
@@ -276,6 +321,7 @@ def main() -> None:
             "audio_captured": loop_state["rms_max"] > 1.0,
             "wav": "loopback.wav",
             "transcription": "loopback_transcription.txt",
+            "segments": "loopback_segments.json",
             "errors": loop_state["err"],
         },
     }
