@@ -17,7 +17,8 @@ PyAudioWPatch (WASAPI-захват).
 - transcription/  — STT (StreamingTranscriber), только распознавание
 - conversation/   — сборка структурированного диалога (продуктовый
   модуль; conversation.json; без анализа/LLM)
-- orchestrator/   — координация жизненного цикла компонентов
+- orchestrator/   — координация жизненного цикла + конвейер обработки
+  Session (Pipeline: Load/Validate/Statistics/Finalize; без бизнес-логики)
 - llm/            — анализ текста (пока пусто, будущее)
 - ui/             — интерфейс (PySide6)
 - session/        — Session: главный доменный объект консультации,

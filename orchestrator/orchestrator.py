@@ -12,6 +12,24 @@ class Orchestrator:
         self.session.start()
 
     # ------------------------------------------------------------------ #
+    # Sprint 9: Session processing pipeline.
+    # The Orchestrator is the single point that manages Session
+    # processing. It holds NO business logic — it only runs the pipeline
+    # stages (each stage delegates to the domain Session). No LLM, no
+    # memory, no analysis.
+    # ------------------------------------------------------------------ #
+    def run(self, session=None):
+        """Run the Session processing pipeline. Returns a PipelineResult.
+
+        ``session`` may be a Session, an experiment directory path, or
+        None (uses the latest experiment). Never raises on pipeline
+        failure — errors are captured in the result.
+        """
+        from orchestrator.pipeline import Pipeline
+        source = session if session is not None else self.session
+        return Pipeline().run(source)
+
+    # ------------------------------------------------------------------ #
     # Sprint 3: streaming transcription pipeline.
     # The Orchestrator ONLY coordinates: it creates Capture and
     # Transcriber, wires them together, starts and stops them. Raw PCM

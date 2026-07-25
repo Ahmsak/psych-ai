@@ -4,6 +4,37 @@
 
 ---
 
+## 2026-07-25 — Sprint 9: Orchestrator Pipeline
+
+### Что сделано
+- SPEC-005. Orchestrator стал единственной точкой управления обработкой
+  Session, без бизнес-логики.
+- orchestrator/pipeline.py: расширяемый конвейер (Load → Validate →
+  Build Statistics → Finalize), каждый этап — отдельный PipelineStage;
+  делегирует доменной Session (Sprint 8).
+- PipelineResult (status/warnings/errors/statistics/duration/
+  stages_completed); PipelineAbort для управляемого FAIL.
+- Логирование logger psychai.pipeline: по одному сообщению на этап.
+- Orchestrator.run(session) → PipelineResult (Session | путь | None);
+  никогда не бросает — ошибки в result. STT-конвейер
+  (run_transcription_stream) не тронут.
+- Sensor-first: FAIL при невалидной Session / отсутствии Conversation /
+  прерывании / неожиданном исключении; WARNING из Session.validate.
+- pytest: tests/test_pipeline.py (12 тестов). Итого 65 passed.
+- Реальный e2e: Orchestrator.run(load_session()) → PASS, 4 этапа
+  залогированы, статистика построена.
+- docs: EXPERIMENTS.md (раздел Orchestrator Pipeline).
+
+### Ограничения соблюдены
+- Без GPT/LLM, без Memory/долгосрочной памяти, без анализа консультации;
+  архитектура Session не менялась; текст Whisper не трогался.
+
+### Следующий шаг
+- Ожидание задания. Memory/LLM — будущие спринты.
+
+---
+
+
 ## 2026-07-25 — Sprint 8: Session Domain Model (главный объект)
 
 ### Что сделано

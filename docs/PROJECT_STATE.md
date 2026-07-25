@@ -34,29 +34,29 @@
 
 ## Current Sprint
 
-Sprint 8 — Session Domain Model. Session стал главным объектом
-предметной области и единой точкой входа Orchestrator (пакет session/:
-model + statistics + loader). Объединяет metadata, timeline,
-conversation, artifacts, statistics, validation; duration, client_name
-(задел). Statistics автоматически (реплики/слова/% времени, без
-интерпретации); validate() → PASS/WARNING/FAIL; сериализация
-load_session (без записи)/save_session (ADR-009). Без анализа/LLM; текст
-Whisper не меняется. pytest 55 passed.
+Sprint 9 — Orchestrator Pipeline. Orchestrator стал единственной точкой
+управления обработкой Session (без бизнес-логики). orchestrator/
+pipeline.py — расширяемый конвейер Load → Validate → Build Statistics →
+Finalize; PipelineResult (status/warnings/errors/statistics/duration);
+логирование по этапам; Orchestrator.run(session). Sensor-first FAIL при
+невалидной Session/нет Conversation/прерывании/исключении. Без LLM,
+памяти, анализа. pytest 65 passed.
 
-Sprint 7 — Conversation Builder (conversation.json, API) — завершён.
-Sprint 6 — Session Alignment (timeline.json, offsets) — завершён.
+Sprint 8 — Session Domain Model (главный объект, statistics, validate) —
+завершён.
+Sprint 7 — Conversation Builder (conversation.json) — завершён.
+Sprint 6 — Session Alignment (timeline.json) — завершён.
 Sprint 5 — единый формат аудио, metadata.json — завершён.
 Sprint 4.0 — двухпотоковый захват (ADR-006) — завершён.
 
 ## Current Goal
 
-Session как главный объект консультации: единый API, статистика,
-самопроверка, сериализация. Без смысловой обработки.
+Единый конвейер обработки Session под управлением Orchestrator:
+этапы, результат, логирование, проверки. Без смысловой обработки.
 
 ## Next Goal
 
-Анализ разговора (модуль llm/) на основе Session/conversation.json —
-будущий спринт. Пока НЕ начат.
+Memory и LLM-анализ — будущие спринты. Пока НЕ начаты.
 
 
 

@@ -81,6 +81,32 @@ timeline.json (атомарно) и проверяет согласованно�
 длительности, имена артефактов); дорожки имеют несовместимый формат;
 timeline повреждён (нет ключей / не парсится).
 
+## Orchestrator Pipeline (Sprint 9)
+`orchestrator/pipeline.py` — единый расширяемый конвейер обработки
+Session. Orchestrator — единственная точка управления этапами, без
+бизнес-логики (каждый этап делегирует доменной Session). Без LLM,
+памяти, анализа.
+
+Этапы: Load Session → Validate Session → Build Statistics → Finalize.
+Расширение — добавлением PipelineStage в Pipeline.stages.
+
+API:
+- `Orchestrator().run(session)` → PipelineResult (принимает Session,
+  путь к каталогу эксперимента или None → последний эксперимент);
+  никогда не бросает исключение — ошибки в result.errors.
+- `Pipeline([stages]).run(source)` напрямую.
+
+PipelineResult: status (PASS/WARNING/FAIL), warnings, errors, statistics,
+duration, stages_completed.
+
+Логирование (logger `psychai.pipeline`, по одному сообщению на этап):
+Session Loaded, Validation Passed, Statistics Built, Pipeline Finished.
+
+Проверки (sensor-first): FAIL если Session невалидна (validate FAIL);
+нет Conversation; Pipeline прерван (PipelineAbort); неожиданное
+исключение (перехват → errors). WARNING пробрасывается из
+Session.validate.
+
 ## Session Domain Model (Sprint 8, главный объект продукта)
 Пакет `session/` — главный объект предметной области и единственная
 точка входа для Orchestrator (ADR-009). Объединяет все артефакты одной
