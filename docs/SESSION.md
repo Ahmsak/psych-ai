@@ -1,0 +1,79 @@
+# SESSION — оперативная память разработки
+
+Обновляется после каждой рабочей сессии. Новая запись — сверху.
+
+---
+
+## 2026-07-25 — Sprint 3.6: аудит и укрепление системы знаний
+
+### Что сделано
+- Аудит docs/: существующие документы покрывают знания «что и почему»,
+  но не покрывали ПРОЦЕСС (как работать) и КРИТЕРИИ (когда готово).
+- Созданы docs/DEVELOPMENT_WORKFLOW.md (полный цикл сессии, git-правила,
+  роль GitHub) и docs/DEFINITION_OF_DONE.md (чек-лист завершения Sprint).
+- START_HERE.md и DOCUMENTATION_LIFECYCLE.md дополнены ссылками на них.
+
+### Что осталось
+- КРИТИЧНО: почти вся работа Sprint 1–3.6 НЕ закоммичена (capture/,
+  transcription/, docs/, tools/ — untracked; последний коммит f4b34e8).
+  При потере машины проект теряется. Нужен commit + push (выполняется
+  владельцем или по его явному указанию).
+- Владелец: подтвердить Next Goal.
+
+### Следующий шаг
+- git add / commit / push всей накопленной работы (см. DEVELOPMENT_WORKFLOW).
+
+### Риски
+- До push единственная копия проекта — локальный диск.
+
+---
+
+## 2026-07-25 — Sprint 3.5: система знаний
+
+### Что сделано
+- Создана структура знаний: START_HERE.md (корень) + docs/
+  (CONSTITUTION, PROJECT_STATE, SESSION, ARCHITECTURAL_DECISIONS,
+  ENVIRONMENT, DEPENDENCIES, MEMORY_ARCHITECTURE,
+  DOCUMENTATION_LIFECYCLE).
+- PROJECT_STATE.md переработан по новой структуре и перенесён из корня
+  в docs/.
+- Создан tools/verify_environment.py — автопроверка среды с итоговым
+  отчётом.
+- Зафиксированы ADR-001..006.
+
+### Что осталось
+- Владелец: подтвердить Next Goal (LLM-подключение или улучшение STT).
+- Известная проблема среды: PySide6 не импортируется в Python 3.12
+  (GUI main.py не запустится) — среду НЕ чинил по правилам проекта,
+  только сообщил.
+
+### Следующий шаг
+- Новый агент: прочитать документы по порядку из START_HERE.md,
+  запустить python tools/verify_environment.py, затем run_stream.py.
+
+### Риски
+- Документация актуальна только при соблюдении
+  DOCUMENTATION_LIFECYCLE.md (человеческий фактор).
+
+---
+
+## 2026-07-25 — Sprint 3: MVP потоковой транскрипции
+
+### Что сделано
+- transcription/ (StreamingTranscriber, TranscriptionConfig, README).
+- Orchestrator.run_transcription_stream(): только координация; PCM
+  напрямую capture → transcriber (ADR-005).
+- run_stream.py; Ctrl+C — чистое завершение без зависших потоков.
+- e2e проверка на реальной машине: loopback + test.wav → корректные
+  RU/EN сегменты, чистый останов.
+
+### Что осталось
+- Запрещённое в спринте отложено: VAD, diarization, endpoint detection,
+  partial results, streaming decoder, overlap, buffer optimization, LLM.
+
+### Следующий шаг
+- Sprint 3.5 (инфраструктура знаний) — выполнен, см. запись выше.
+
+### Риски
+- CPU-инференс модели small может отставать от реального времени на
+  слабых машинах; окна без overlap рвут слова на границах.
