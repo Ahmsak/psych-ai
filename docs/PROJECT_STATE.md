@@ -34,16 +34,25 @@
 
 ## Current Sprint
 
-Sprint 10 — End-to-End Integration Validation. Подготовлен Integration
-Harness (tools/run_integration_validation.py, инженерный инструмент, не
-часть продукта): прогоняет весь конвейер над каталогом эксперимента и
-печатает Integration Report (PASS/WARNING/FAIL по 6 этапам: Audio
-Capture, Metadata, Timeline, Conversation, Session, Orchestrator) +
-сводку и Overall Result. Только существующие API; артефакты не меняются.
-pytest 69 passed. Реальный e2e на звонке — по готовности владельца.
+Sprint 10.1 — Integration Investigation (INV-001). Первый реальный e2e
+(эксперимент 20260725_181758_timeline) дал Overall WARNING, 0 FAIL —
+архитектура работоспособна. Расследованы 2 проблемы:
+- №1 (psychologist=0): причина — почти пустой сигнал микрофона
+  (peak 3.6%) → Whisper 0 сегментов. Не баг конвейера. Код-дефект
+  МАСКИРОВКИ (расхождение mic_transcription.txt ↔ mic_segments.json:
+  галлюцинации на тишине) ИСПРАВЛЕН: текст .txt строится из того же
+  сегментного пути; добавлен sensor «transcription/segments mismatch»
+  (check_experiment + harness) + тест. pytest 70 passed.
+- №2 (обе стороны на MIC): смешивание ДО PsychAI (corr огибающих 0.952
+  по offset; в коде микса нет). Аудио-тракт Windows/Realtek/акустика —
+  по правилу НЕ исправляется, только рекомендации.
+ВАЖНО: WARNING «no psychologist utterances» на этом эксперименте —
+ПРАВДИВЫЙ сигнал (голоса психолога нет в записи). PASS достижим только
+на новой записи с исправным микрофоном (устранить причины №2); подгонять
+реплики = фабрикация, не делается. Отчёты: docs/investigations/INV-001-*.
 
-Sprint 9 — Orchestrator Pipeline (Load/Validate/Statistics/Finalize) —
-завершён.
+Sprint 10 — Integration Harness — завершён.
+Sprint 9 — Orchestrator Pipeline — завершён.
 Sprint 8 — Session Domain Model — завершён.
 Sprint 7 — Conversation Builder — завершён.
 Sprint 6 — Session Alignment — завершён.
@@ -52,12 +61,14 @@ Sprint 4.0 — двухпотоковый захват (ADR-006) — завер�
 
 ## Current Goal
 
-Интеграционная проверка всей архитектуры на реальном звонке через
-Integration Harness. Без новой функциональности.
+Валидация интеграции на реальном звонке + расследование найденных
+проблем. Memory/LLM НЕ начаты.
 
 ## Next Goal
 
-Memory и LLM-анализ — будущие спринты. Пока НЕ начаты.
+Memory и LLM-анализ — будущие спринты. Пока НЕ начаты. Перед ними —
+новый реальный e2e с исправным микрофоном (проверить, что №1 даёт PASS,
+а №2 устранена настройками записи).
 
 
 
