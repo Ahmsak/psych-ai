@@ -30,6 +30,9 @@ logs/
 tmp/
 *.tmp
 
+# --- Experiment artifacts (per-run, large, gitignored) ---
+experiments/
+
 # --- Derived knowledge indexes (rebuildable from Markdown, ADR-006) ---
 *.db
 *.sqlite
