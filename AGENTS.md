@@ -20,7 +20,9 @@ PyAudioWPatch (WASAPI-захват).
 - orchestrator/   — координация жизненного цикла компонентов
 - llm/            — анализ текста (пока пусто, будущее)
 - ui/             — интерфейс (PySide6)
-- session/        — сессия разговора
+- session/        — Session: главный доменный объект консультации,
+  единая точка входа Orchestrator (metadata/timeline/conversation/
+  statistics/validation; без LLM)
 - tools/          — служебные скрипты и эксперименты (не код продукта)
 - experiments/    — артефакты прогонов (gitignored)
 - docs/           — система знаний проекта

@@ -1,7 +1,11 @@
-class Session:
-    def __init__(self):
-        self.active = False
+"""Backward-compatible entry point.
 
-    def start(self):
-        self.active = True
-        print("Session object started")
+The Session domain model now lives in ``session.model``. This module
+re-exports it so existing imports (``from session.session import
+Session``) keep working. Session is the single entry point for the
+Orchestrator.
+"""
+
+from session.model import Session
+
+__all__ = ["Session"]

@@ -81,7 +81,38 @@ timeline.json (атомарно) и проверяет согласованно�
 длительности, имена артефактов); дорожки имеют несовместимый формат;
 timeline повреждён (нет ключей / не парсится).
 
-## Session API (Sprint 6)
+## Session Domain Model (Sprint 8, главный объект продукта)
+Пакет `session/` — главный объект предметной области и единственная
+точка входа для Orchestrator (ADR-009). Объединяет все артефакты одной
+консультации: metadata, timeline, conversation, artifacts, statistics,
+validation. Без анализа/LLM; текст Whisper не меняется.
+
+API:
+- `from session import Session, load_session, save_session`;
+- `load_session([dir])` — собирает Session из артефактов (строит
+  timeline/conversation в памяти, если файлов нет); БЕЗ записи;
+- `save_session(session[, path])` — пишет session.json (атомарно)
+  только по явному вызову;
+- `load_session_file(path)` — восстановление из session.json;
+- аксессоры: `session.metadata`, `.timeline`, `.conversation`,
+  `.artifacts`, `.statistics`, `.duration`, `.client_name` (задел),
+  `.session_id`.
+
+Statistics (объективные метаданные, без интерпретации): длительность,
+число реплик, реплики психолога/клиента, % времени каждой стороны
+(если есть тайминги), общее число слов.
+
+Validation: `session.validate()` → PASS / WARNING / FAIL с причинами.
+FAIL: нет metadata/timeline или рассинхрон session_id. WARNING: пустой
+conversation или нет реплик одной из сторон.
+
+`session.json` — сериализованный снимок консультации (session_id,
+metadata, timeline, conversation, statistics, validation).
+
+Совместимость: `tools/session_manager.py` остаётся тонкой обёрткой для
+Sprint 6/7; `session/session.py` — ре-экспорт доменной Session.
+
+## Session API (Sprint 6, загрузчики — совместимый слой)
 `tools/session_manager.py` — единый интерфейс загрузки:
 - `load_timeline([dir])` → dict Timeline (строит из metadata в памяти,
   если timeline.json нет; без сайд-эффектов записи);

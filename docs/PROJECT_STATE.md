@@ -34,27 +34,29 @@
 
 ## Current Sprint
 
-Sprint 7 — Conversation Builder (первый продуктовый модуль). Пакет
-conversation/ собирает из двух транскрипций единый упорядоченный по
-времени диалог: модель Utterance/Conversation, builder (offset+seg.start,
-speaker по источнику), conversation.json (источник данных для анализа),
-API load_conversation() и Session.conversation, проверки согласованности.
-Без анализа/диаризации/LLM; текст Whisper не меняется (ADR-008). Data-слой
-(tools/) дополнительно пишет *_segments.json. pytest 44 passed.
+Sprint 8 — Session Domain Model. Session стал главным объектом
+предметной области и единой точкой входа Orchestrator (пакет session/:
+model + statistics + loader). Объединяет metadata, timeline,
+conversation, artifacts, statistics, validation; duration, client_name
+(задел). Statistics автоматически (реплики/слова/% времени, без
+интерпретации); validate() → PASS/WARNING/FAIL; сериализация
+load_session (без записи)/save_session (ADR-009). Без анализа/LLM; текст
+Whisper не меняется. pytest 55 passed.
 
-Sprint 6 — Session Alignment (timeline.json, offsets, API) — завершён.
+Sprint 7 — Conversation Builder (conversation.json, API) — завершён.
+Sprint 6 — Session Alignment (timeline.json, offsets) — завершён.
 Sprint 5 — единый формат аудио, metadata.json — завершён.
 Sprint 4.0 — двухпотоковый захват (ADR-006) — завершён.
 
 ## Current Goal
 
-Первый продуктовый модуль: структурированный диалог (conversation.json)
-как источник данных для будущего анализа. Без смысловой обработки.
+Session как главный объект консультации: единый API, статистика,
+самопроверка, сериализация. Без смысловой обработки.
 
 ## Next Goal
 
-Анализ разговора (модуль llm/) на основе conversation.json — будущий
-спринт. Пока НЕ начат.
+Анализ разговора (модуль llm/) на основе Session/conversation.json —
+будущий спринт. Пока НЕ начат.
 
 
 

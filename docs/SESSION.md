@@ -4,6 +4,39 @@
 
 ---
 
+## 2026-07-25 — Sprint 8: Session Domain Model (главный объект)
+
+### Что сделано
+- SPEC-004 + ADR-009 (Session — главный доменный объект и единая точка
+  входа Orchestrator; устранены две конкурирующие Session).
+- Продуктовый пакет session/:
+  - model.py — класс Session (metadata/timeline/conversation/artifacts/
+    statistics/validation, duration, client_name-задел) + runtime
+    lifecycle start()/active;
+  - statistics.py — compute_statistics (длительность, число реплик,
+    реплики психолога/клиента, % времени сторон, число слов; без
+    интерпретации);
+  - loader.py — load_session (без записи), save_session/load_session_file
+    (session.json, явно);
+  - __init__.py — публичный API.
+- session/session.py → ре-экспорт доменной Session (совместимость
+  Orchestrator). tools/session_manager.py оставлен тонким слоем Sprint 6/7.
+- Orchestrator теперь получает доменную Session (проверено).
+- pytest: tests/test_session_domain.py (11 тестов). Итого 55 passed.
+- Реальный e2e: load_session → statistics (2 реплики, 50/50 время,
+  18 слов), validate PASS, save/load round-trip PASS.
+- docs: EXPERIMENTS.md (раздел Session Domain Model), ADR-009.
+
+### Ограничения соблюдены
+- Без LLM/GPT, без анализа Conversation, эмоций, искажений; текст
+  Whisper не менялся; архитектура (ось Session) укреплена, не изменена.
+
+### Следующий шаг
+- Ожидание задания. Анализ (llm/) — будущий спринт.
+
+---
+
+
 ## 2026-07-25 — Sprint 7: Conversation Builder (первый продуктовый модуль)
 
 ### Что сделано
