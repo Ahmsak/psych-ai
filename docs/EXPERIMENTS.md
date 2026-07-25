@@ -81,6 +81,27 @@ timeline.json (атомарно) и проверяет согласованно�
 длительности, имена артефактов); дорожки имеют несовместимый формат;
 timeline повреждён (нет ключей / не парсится).
 
+## Integration Harness (Sprint 10, инженерный инструмент)
+`tools/run_integration_validation.py` — прогоняет ВЕСЬ конвейер над одним
+каталогом эксперимента и печатает единый Integration Report: PASS /
+WARNING / FAIL по каждому этапу + сводка и Overall Result. Использует
+только существующие API; НЕ меняет существующие артефакты; не добавляет
+продуктовую логику. НЕ часть продукта.
+
+Этапы: Audio Capture (обе дорожки, чтение WAV, формат, ошибки) →
+Metadata (структура/обязательные поля/согласованность) → Timeline
+(offsets, согласованность, соответствие metadata) → Conversation
+(порядок реплик, speaker, start_time, текст, соответствие timeline) →
+Session (validate/statistics/serialization/загрузка) → Orchestrator
+(проход Pipeline, PipelineResult, отсутствие внутренних ошибок).
+
+Использование:
+- `python tools/run_integration_validation.py` — новейший *_timeline;
+- `python tools/run_integration_validation.py <experiment_dir>`.
+
+Exit 0 если Overall ≠ FAIL, иначе 1. Проверки round-trip сериализации
+идут во временный файл — артефакты каталога не изменяются.
+
 ## Orchestrator Pipeline (Sprint 9)
 `orchestrator/pipeline.py` — единый расширяемый конвейер обработки
 Session. Orchestrator — единственная точка управления этапами, без

@@ -4,6 +4,33 @@
 
 ---
 
+## 2026-07-25 — Sprint 10: Integration Harness (инженерный инструмент)
+
+### Что сделано
+- tools/run_integration_validation.py — прогоняет весь конвейер над
+  каталогом эксперимента, печатает Integration Report (PASS/WARNING/FAIL
+  по 6 этапам) + сводку и Overall Result.
+- Этапы: Audio Capture, Metadata, Timeline, Conversation, Session,
+  Orchestrator. Используются только существующие API; артефакты не
+  изменяются (round-trip сериализации во временный файл); новая
+  продуктовая логика не добавлена. Harness — НЕ часть продукта.
+- pytest: tests/test_integration_harness.py (4 теста, включая проверку
+  неизменности артефактов и FAIL на пустом каталоге). Итого 69 passed.
+- Smoke на существующем эксперименте: Overall Result PASS (6/0/0).
+- docs: EXPERIMENTS.md (раздел Integration Harness).
+
+### Ограничения соблюдены
+- Без GPT/LLM, без Memory, без изменения архитектуры и новой
+  функциональности; артефакты не менялись.
+
+### Следующий шаг
+- Ожидание указаний. Реальный e2e-прогон на звонке WhatsApp Desktop —
+  по готовности владельца: `python tools/run_timeline_experiment.py
+  --language ru`, затем `python tools/run_integration_validation.py`.
+
+---
+
+
 ## 2026-07-25 — Sprint 9: Orchestrator Pipeline
 
 ### Что сделано

@@ -34,25 +34,26 @@
 
 ## Current Sprint
 
-Sprint 9 — Orchestrator Pipeline. Orchestrator стал единственной точкой
-управления обработкой Session (без бизнес-логики). orchestrator/
-pipeline.py — расширяемый конвейер Load → Validate → Build Statistics →
-Finalize; PipelineResult (status/warnings/errors/statistics/duration);
-логирование по этапам; Orchestrator.run(session). Sensor-first FAIL при
-невалидной Session/нет Conversation/прерывании/исключении. Без LLM,
-памяти, анализа. pytest 65 passed.
+Sprint 10 — End-to-End Integration Validation. Подготовлен Integration
+Harness (tools/run_integration_validation.py, инженерный инструмент, не
+часть продукта): прогоняет весь конвейер над каталогом эксперимента и
+печатает Integration Report (PASS/WARNING/FAIL по 6 этапам: Audio
+Capture, Metadata, Timeline, Conversation, Session, Orchestrator) +
+сводку и Overall Result. Только существующие API; артефакты не меняются.
+pytest 69 passed. Реальный e2e на звонке — по готовности владельца.
 
-Sprint 8 — Session Domain Model (главный объект, statistics, validate) —
+Sprint 9 — Orchestrator Pipeline (Load/Validate/Statistics/Finalize) —
 завершён.
-Sprint 7 — Conversation Builder (conversation.json) — завершён.
-Sprint 6 — Session Alignment (timeline.json) — завершён.
+Sprint 8 — Session Domain Model — завершён.
+Sprint 7 — Conversation Builder — завершён.
+Sprint 6 — Session Alignment — завершён.
 Sprint 5 — единый формат аудио, metadata.json — завершён.
 Sprint 4.0 — двухпотоковый захват (ADR-006) — завершён.
 
 ## Current Goal
 
-Единый конвейер обработки Session под управлением Orchestrator:
-этапы, результат, логирование, проверки. Без смысловой обработки.
+Интеграционная проверка всей архитектуры на реальном звонке через
+Integration Harness. Без новой функциональности.
 
 ## Next Goal
 
