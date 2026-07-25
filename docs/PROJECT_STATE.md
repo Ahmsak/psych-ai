@@ -24,6 +24,13 @@
   DEFINITION_OF_DONE, DISASTER_RECOVERY, BACKUP_STRATEGY, VERSIONING
   (предложение), GLOSSARY, OWNER_DECISIONS, расширенный .gitignore;
   вся работа Sprint 1–3.6 закоммичена и запушена в GitHub.
+- Architectural Improvements (harness, по мотивам habr/1062822):
+  AGENTS.md (карта для агентов), единый Definition of Done (чек-лист в
+  docs/DEFINITION_OF_DONE.md), docs/specs/ (шаблон спецификаций),
+  минимальный pytest-набор (smoke, логика capture/transcription,
+  валидность JSON; маркеры hardware/slow), docs/adr/ (короткие ADR;
+  ADR-006 — два независимых аудиопотока mic+loopback). Не внедрено по
+  решению владельца: R2 (CONVENTIONS), R6 (check_done); R7 — после MVP.
 
 ## Current Sprint
 
