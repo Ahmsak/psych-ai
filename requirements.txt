@@ -5,6 +5,7 @@ click==8.4.2
 colorama==0.4.6
 ctranslate2==4.8.1
 faster-whisper==1.2.1
+pyaudiowpatch==0.2.12.8
 filelock==3.29.7
 flatbuffers==25.12.19
 fsspec==2026.6.0
