@@ -45,5 +45,6 @@ capture → transcription). Полные правила: docs/CONSTITUTION.md.
 
 Перед работой: docs/DEVELOPMENT_WORKFLOW.md (цикл разработки, git).
 Перед завершением Sprint: docs/DEFINITION_OF_DONE.md (чек-лист).
+Потеря машины / новая машина: docs/DISASTER_RECOVERY.md.
 Дальше — по необходимости: docs/DEPENDENCIES.md, README модулей
 (capture/, transcription/), исходники. Не читай весь проект без нужды.
