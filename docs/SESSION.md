@@ -4,6 +4,36 @@
 
 ---
 
+## 2026-07-25 — Architectural Improvements: R1, R3, R4, R5 (одобрено)
+
+### Что сделано
+- R1: создан AGENTS.md (корень) — краткая карта проекта для агентов.
+- R3: единый Definition of Done (8-пунктовый чек-лист) интегрирован в
+  docs/DEFINITION_OF_DONE.md; расширенный спринтовый чек-лист сохранён.
+- R4: каталог docs/specs/ — README + SPEC-000-template.md
+  (Purpose / Requirements / Constraints / Acceptance Criteria /
+  Definition of Done).
+- R5: минимальный набор pytest (offline по умолчанию):
+  tests/test_smoke.py (импорты, конфиги, process_id NotImplementedError),
+  tests/test_transcription.py (окно, resample, silence-gate, ошибка без
+  модели; реальный декод @slow, skip без фикстуры),
+  tests/test_capture.py (downmix, idempotent stop; открытие устройства
+  @hardware), tests/test_artifacts.py (валидность manifest.json).
+  pytest.ini с маркерами hardware/slow (opt-in); pytest в requirements.
+- Проверено: 17 passed, 2 deselected (0.6s); hardware-тест реально
+  открывает WASAPI-устройство и проходит; slow корректно gated.
+
+### Что осталось
+- R2, R6 — по решению владельца НЕ внедрять сейчас.
+- R7 — после MVP.
+- speech.wav фикстура для @slow — добавить при необходимости.
+
+### Следующий шаг
+- Ожидание указаний владельца.
+
+---
+
+
 ## 2026-07-25 — Sprint 4.0, шаг 2: dual capture (mic + loopback)
 
 ### Что сделано
