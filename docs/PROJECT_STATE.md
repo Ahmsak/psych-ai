@@ -34,26 +34,27 @@
 
 ## Current Sprint
 
-Sprint 5 — Unified Audio Timeline. Реализована временная основа для
-будущего объединения двух потоков: единый формат аудио (48к/mono/PCM16),
-временная шкала на каждый поток, metadata.json, sensor-first проверки
-(tools/check_experiment.py), pytest (25 passed). Объединение/синхро/
-диаризация/LLM НЕ выполняются (вне спринта). Артефакты — см.
-docs/EXPERIMENTS.md. Ожидается подтверждение владельцем на реальном
-звонке (run_timeline_experiment.py).
+Sprint 6 — Session Alignment. Реализована единая временная модель
+разговора: timeline.json (timeline_start/end, tracks, offsets,
+artifacts) из metadata.json по ADR-007 (offset = first_frame_at −
+timeline_start); проверки согласованности; API загрузки
+(tools/session_manager.py: load_timeline/load_session). Объединения
+аудио/синхро/диаризации/LLM нет. pytest 33 passed. См. docs/EXPERIMENTS.md.
 
-Sprint 4.0 — двухпотоковый захват (mic + loopback) реализован
-экспериментально; принят как архитектурное решение (ADR-006).
+Sprint 5 — единый формат аудио (48к/mono/PCM16), metadata.json,
+временные метки, sensor-first проверки — завершён.
+
+Sprint 4.0 — двухпотоковый захват (mic + loopback), ADR-006.
 
 ## Current Goal
 
-Качественная временная основа для объединения потоков: единый формат,
-временные метки, metadata, измеримые проверки. Без анализа диалога.
+Единая временная модель (Timeline) как источник истины для Session:
+объективные offsets, проверки, единый API загрузки. Без анализа речи.
 
 ## Next Goal
 
-Объединение дорожек в единый диалог по общей временной шкале (будущий
-спринт) — на основе metadata.json и единого формата.
+Физическое объединение дорожек в единый диалог по Timeline (будущий
+спринт) — на основе timeline.json и session_manager.
 
 
 

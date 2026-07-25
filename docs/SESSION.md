@@ -4,6 +4,36 @@
 
 ---
 
+## 2026-07-25 — Sprint 6: Session Alignment (Timeline)
+
+### Что сделано
+- SPEC-002 (docs/specs/) + ADR-007 (offset по first_frame_at).
+- tools/build_timeline.py — строит timeline.json из metadata.json:
+  timeline_start=min(record_start), timeline_end=max(record_start+dur),
+  offset потока=first_frame_at−timeline_start, межпотоковый
+  loopback−mic. Запись атомарна (tmp+os.replace).
+- Проверки согласованности (Задача 4): FAIL если offset неопределим,
+  timeline противоречит metadata, форматы дорожек несовместимы,
+  timeline повреждён.
+- tools/session_manager.py — API load_timeline()/load_session()
+  (Session с accessors: offsets, wav_path, transcription_text и т.д.);
+  строит из metadata в памяти, если timeline.json нет.
+- pytest: tests/test_session_alignment.py (10 тестов, вкл. negative).
+  Итого 33 passed, 2 deselected.
+- docs/EXPERIMENTS.md — разделы Session Timeline и Session API.
+- Реальный прогон на артефактах Sprint 5: timeline.json построен,
+  offsets mic=0.188s loop=1.353s (loop−mic=1.165s), API грузит OK.
+
+### Ограничения соблюдены
+- Аудио НЕ объединялось/не микшировалось/не синхронизировалось;
+  диаризации/LLM/анализа нет; архитектура не менялась (код в tools/).
+
+### Следующий шаг
+- Ожидание задания. Физическое объединение дорожек — будущий спринт.
+
+---
+
+
 ## 2026-07-25 — Sprint 5: Unified Audio Timeline
 
 ### Что сделано

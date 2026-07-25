@@ -56,6 +56,40 @@
 общую временную опору: в будущем дорожки можно выровнять по времени
 первого кадра без пересчёта форматов. Само объединение — вне Sprint 5.
 
+## Session Timeline (Sprint 6)
+`timeline.json` — единая временная модель разговора, строится из
+`metadata.json` (без микса аудио, без LLM, см. ADR-007).
+
+Построение: `python tools/build_timeline.py [<dir>]` — пишет
+timeline.json (атомарно) и проверяет согласованность; exit!=0 при FAIL.
+
+Ключи timeline.json:
+- `session_id`, `created_at`, `sprint`, `source_metadata`;
+- `timeline_start` = min(record_start обоих потоков);
+- `timeline_end` = max(record_start + duration);
+- `duration_sec`;
+- `unified_format`;
+- `tracks`: {microphone, loopback} с role/wav/transcription/
+  stored_format/record_start/first_frame_at/duration_sec/audio_captured;
+- `offsets`: {per_track_sec, loopback_minus_mic_sec, method}
+  (offset = first_frame_at − timeline_start, ADR-007);
+- `artifacts`: имена wav/transcription на поток;
+- `note`: дорожки НЕ объединены/не синхронизированы/не диаризованы.
+
+Проверки согласованности (Задача 4, sensor-first): FAIL если offset
+невозможно определить; timeline противоречит metadata (session_id,
+длительности, имена артефактов); дорожки имеют несовместимый формат;
+timeline повреждён (нет ключей / не парсится).
+
+## Session API (Sprint 6)
+`tools/session_manager.py` — единый интерфейс загрузки:
+- `load_timeline([dir])` → dict Timeline (строит из metadata в памяти,
+  если timeline.json нет; без сайд-эффектов записи);
+- `load_session([dir])` → объект Session с доступом к session_id,
+  timeline_start/end, tracks, offsets, offset_of(), wav_path(),
+  transcription_path()/text(). Это структура для дальнейшей работы
+  (будущее объединение/UI/анализ) — источник истины для Session.
+
 ## Sensor-first проверка
 `python tools/check_experiment.py [<dir>]` — измеримые PASS/FAIL:
 metadata есть/парсится/полон; WAV открывается и совпадает с единым
