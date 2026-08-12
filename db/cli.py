@@ -16,7 +16,7 @@ from pathlib import Path
 
 from db.database import get_db_path, get_engine, get_session_factory, init_db
 from db.importer import import_experiment
-from db.migrations import get_schema_version
+from db.migrations import SchemaMigrationError, get_schema_version
 
 
 def _cmd_init(args: argparse.Namespace) -> int:
@@ -182,7 +182,13 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except SchemaMigrationError as exc:
+        # Incompatible on-disk schema (e.g. v1 FK policy). Do NOT auto-drop.
+        print("SCHEMA MIGRATION REQUIRED\n", file=sys.stderr)
+        print(str(exc), file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

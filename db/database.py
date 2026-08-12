@@ -22,7 +22,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _DEFAULT_DB_DIR = _PROJECT_ROOT / "data"
 _DEFAULT_DB_PATH = _DEFAULT_DB_DIR / "psychai.db"
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def get_db_path(override: str | None = None) -> Path:
@@ -62,35 +62,28 @@ def get_session_factory(engine: Engine) -> sessionmaker[Session]:
 
 
 def init_db(engine: Engine) -> None:
-    """Create all tables and record the schema version."""
+    """Create tables if absent and reconcile the schema version.
+
+    ``create_all`` only adds missing tables; it never alters existing FK policies.
+    We then reconcile the schema version honestly: if the on-disk FK policy already
+    matches v2 we just record the version marker; if it is an incompatible older
+    schema we raise (NEVER auto-drop or overwrite user data).
+    """
     Base.metadata.create_all(engine)
-    _ensure_schema_version(engine)
+    from db.migrations import migrate
+
+    migrate(engine)  # raises SchemaMigrationError on incompatible old schema
 
 
 def _ensure_schema_version(engine: Engine) -> None:
-    """Insert schema_version row if not present."""
-    from sqlalchemy import text
+    """DEPRECATED: schema version is now reconciled by db.migrations.migrate().
 
-    with engine.connect() as conn:
-        row = conn.execute(
-            text("SELECT version FROM schema_version WHERE version = :v"),
-            {"v": SCHEMA_VERSION},
-        ).fetchone()
-        if row is None:
-            from datetime import datetime, timezone
+    Kept only as a no-op guard in case any caller still references it; the real
+    logic lives in ``migrate``. Will be removed once callers are confirmed gone.
+    """
+    from db.migrations import migrate
 
-            conn.execute(
-                text(
-                    "INSERT INTO schema_version (version, applied_at, description) "
-                    "VALUES (:v, :t, :d)"
-                ),
-                {
-                    "v": SCHEMA_VERSION,
-                    "t": datetime.now(timezone.utc),
-                    "d": "initial MVP schema",
-                },
-            )
-            conn.commit()
+    migrate(engine)
 
 
 __all__ = [

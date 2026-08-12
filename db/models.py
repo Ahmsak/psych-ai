@@ -69,7 +69,7 @@ class Session(Base):
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="RESTRICT"), nullable=True)
     source_session_id = Column(String(64), nullable=True)
     source = Column(String(64), nullable=False, default="experiment")
     status = Column(String(32), nullable=False, default="imported")
@@ -80,16 +80,20 @@ class Session(Base):
 
     client = relationship("Client", back_populates="sessions")
     audio_tracks = relationship(
-        "AudioTrack", back_populates="session", cascade="all, delete-orphan"
+        "AudioTrack", back_populates="session", cascade="all, delete-orphan",
+        passive_deletes=True,
     )
     transcript_segments = relationship(
-        "TranscriptSegment", back_populates="session", cascade="all, delete-orphan"
+        "TranscriptSegment", back_populates="session", cascade="all, delete-orphan",
+        passive_deletes=True,
     )
     dialogue_utterances = relationship(
-        "DialogueUtterance", back_populates="session", cascade="all, delete-orphan"
+        "DialogueUtterance", back_populates="session", cascade="all, delete-orphan",
+        passive_deletes=True,
     )
     analyses = relationship(
-        "Analysis", back_populates="session", cascade="all, delete-orphan"
+        "Analysis", back_populates="session", cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     def __repr__(self) -> str:
@@ -102,7 +106,7 @@ class AudioTrack(Base):
     __tablename__ = "audio_tracks"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(Integer, ForeignKey("sessions.id"), nullable=False)
+    session_id = Column(Integer, ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
     source = Column(String(32), nullable=False)  # microphone | loopback | combined
     file_path = Column(Text, nullable=True)  # absolute or project-relative path
     duration = Column(Float, nullable=True)  # seconds
@@ -126,8 +130,8 @@ class TranscriptSegment(Base):
     __tablename__ = "transcript_segments"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(Integer, ForeignKey("sessions.id"), nullable=False)
-    audio_track_id = Column(Integer, ForeignKey("audio_tracks.id"), nullable=True)
+    session_id = Column(Integer, ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
+    audio_track_id = Column(Integer, ForeignKey("audio_tracks.id", ondelete="SET NULL"), nullable=True)
     speaker = Column(String(32), nullable=True)  # psychologist | client
     start = Column(Float, nullable=False)  # seconds from session timeline start
     end = Column(Float, nullable=False)
@@ -151,11 +155,16 @@ dialogue_utterance_segments = Table(
     "dialogue_utterance_segments",
     Base.metadata,
     Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("utterance_id", Integer, ForeignKey("dialogue_utterances.id"), nullable=False),
+    Column("utterance_id", Integer, ForeignKey("dialogue_utterances.id", ondelete="CASCADE"), nullable=False),
     Column(
         "transcript_segment_id",
         Integer,
-        ForeignKey("transcript_segments.id"),
+        # NO ACTION (not RESTRICT): SQLite evaluates NO ACTION at end-of-statement,
+        # allowing the child cascade (DELETE dialogue_utterances -> junction) to clear
+        # the link before the FK is finally checked. RESTRICT fires immediately and
+        # wrongly blocks `DELETE FROM sessions` (cascade-ordering). Semantically
+        # equivalent to RESTRICT (blocks deleting a RAW segment still linked to DERIVED).
+        ForeignKey("transcript_segments.id", ondelete="NO ACTION"),
         nullable=False,
     ),
     Column("sequence", Integer, nullable=False, default=0),
@@ -173,7 +182,7 @@ class DialogueUtterance(Base):
     __tablename__ = "dialogue_utterances"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(Integer, ForeignKey("sessions.id"), nullable=False)
+    session_id = Column(Integer, ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
     speaker = Column(String(32), nullable=False)
     start = Column(Float, nullable=False)
     end = Column(Float, nullable=True)
@@ -204,7 +213,7 @@ class Analysis(Base):
     __tablename__ = "analyses"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(Integer, ForeignKey("sessions.id"), nullable=False)
+    session_id = Column(Integer, ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
     type = Column(String(64), nullable=False)  # summary | hypotheses | ...
     model = Column(String(64), nullable=True)
     status = Column(String(32), nullable=False, default="pending")

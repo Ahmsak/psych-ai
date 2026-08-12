@@ -258,6 +258,23 @@ class DialogueRepository:
         )
         return list(self._s.execute(stmt).scalars())
 
+    def delete_by_session(self, session_id: int) -> int:
+        """Delete all DialogueUtterances of a session (DERIVED layer only).
+
+        DB-level ON DELETE CASCADE clears the junction rows
+        (dialogue_utterance_segments); RAW transcript_segments are untouched.
+        Returns the number of utterances deleted.
+        """
+        from sqlalchemy import delete
+
+        n = (
+            self._s.execute(
+                delete(DialogueUtterance).where(DialogueUtterance.session_id == session_id)
+            ).rowcount
+        )
+        self._s.flush()
+        return n
+
 
 # ── Analysis ───────────────────────────────────────────────────────────
 

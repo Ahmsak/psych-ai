@@ -507,3 +507,299 @@ def test_real_experiment_idempotent(db_engine):
     assert not r1.skipped
     assert r2.skipped
     assert r1.session_id == r2.session_id
+
+
+# ── Deletion-policy tests (B1) ─────────────────────────────────────────
+#
+# Verifies the approved deletion semantics:
+#   Session.client_id          -> RESTRICT
+#   AudioTrack.session_id      -> CASCADE
+#   TranscriptSegment.session_id       -> CASCADE
+#   TranscriptSegment.audio_track_id   -> SET NULL
+#   DialogueUtterance.session_id        -> CASCADE
+#   Analysis.session_id        -> CASCADE
+#   dialogue_utterance_segments.utterance_id       -> CASCADE
+#   dialogue_utterance_segments.transcript_segment_id -> NO ACTION
+#   (NO ACTION == deferred RESTRICT in SQLite: blocks deleting a RAW segment still
+#    linked to DERIVED, but does NOT block `DELETE FROM sessions` like immediate RESTRICT)
+# RAW transcript_segments must never be destroyed by deleting a DERIVED row,
+# and no dangling foreign keys may remain.
+
+
+def _dangling_count(conn) -> int:
+    """Count dangling FK references across deletion-relevant tables."""
+    sql = [
+        # junction row whose utterance is gone
+        "SELECT COUNT(*) FROM dialogue_utterance_segments d "
+        "WHERE NOT EXISTS (SELECT 1 FROM dialogue_utterances u WHERE u.id = d.utterance_id)",
+        # junction row whose segment is gone
+        "SELECT COUNT(*) FROM dialogue_utterance_segments d "
+        "WHERE NOT EXISTS (SELECT 1 FROM transcript_segments t WHERE t.id = d.transcript_segment_id)",
+        # segment whose audio_track is gone (non-null)
+        "SELECT COUNT(*) FROM transcript_segments t WHERE audio_track_id IS NOT NULL "
+        "AND NOT EXISTS (SELECT 1 FROM audio_tracks a WHERE a.id = t.audio_track_id)",
+        # audio_track whose session is gone
+        "SELECT COUNT(*) FROM audio_tracks a "
+        "WHERE NOT EXISTS (SELECT 1 FROM sessions s WHERE s.id = a.session_id)",
+        # segment whose session is gone
+        "SELECT COUNT(*) FROM transcript_segments t "
+        "WHERE NOT EXISTS (SELECT 1 FROM sessions s WHERE s.id = t.session_id)",
+        # utterance whose session is gone
+        "SELECT COUNT(*) FROM dialogue_utterances u "
+        "WHERE NOT EXISTS (SELECT 1 FROM sessions s WHERE s.id = u.session_id)",
+    ]
+    total = 0
+    for q in sql:
+        total += conn.execute(text(q)).scalar() or 0
+    return total
+
+
+def _seed_full_graph(session) -> int:
+    """Build client->session->track->raw_segment + utterance->raw_segment(m2m)."""
+    from db.models import Client, Session as SM, AudioTrack, TranscriptSegment, DialogueUtterance
+
+    client = Client(display_name="Del")
+    session.add(client)
+    session.flush()
+    sess = SM(client_id=client.id, source_session_id="del_test")
+    session.add(sess)
+    session.flush()
+    track = AudioTrack(session_id=sess.id, source="microphone")
+    session.add(track)
+    session.flush()
+    seg = TranscriptSegment(
+        session_id=sess.id, audio_track_id=track.id, speaker="psychologist",
+        start=0.0, end=2.0, text="RAW MUST SURVIVE",
+    )
+    session.add(seg)
+    session.flush()
+    utt = DialogueUtterance(
+        session_id=sess.id, speaker="psychologist", start=0.0, end=2.0,
+        text="derived", source="microphone", normalization_version="v1",
+    )
+    session.add(utt)
+    session.flush()
+    session.execute(
+        dialogue_utterance_segments.insert().values(
+            utterance_id=utt.id, transcript_segment_id=seg.id, sequence=0
+        )
+    )
+    session.commit()
+    return sess.id
+
+
+def test_F1_delete_session_raw_sql_cascades_children(db_engine):
+    """F1: raw `DELETE FROM sessions` removes all children, dangling=0."""
+    Factory = get_session_factory(db_engine)
+    with Factory() as s:
+        sid = _seed_full_graph(s)
+    with db_engine.begin() as conn:
+        conn.execute(text("PRAGMA foreign_keys=ON"))
+        conn.execute(text("DELETE FROM sessions WHERE id=:s"), {"s": sid})
+        counts = {t: conn.execute(text(f"SELECT COUNT(*) FROM {t}")).scalar()
+                  for t in ("audio_tracks", "transcript_segments",
+                            "dialogue_utterances", "dialogue_utterance_segments", "analyses")}
+        dangling = _dangling_count(conn)
+    assert counts == {"audio_tracks": 0, "transcript_segments": 0,
+                      "dialogue_utterances": 0, "dialogue_utterance_segments": 0, "analyses": 0}
+    assert dangling == 0
+
+
+def test_F2_delete_session_orm_cascades_children(db_session):
+    """F2: ORM session.delete cascades (passive_deletes) and leaves dangling=0."""
+    from db.models import Session as SM
+
+    sid = _seed_full_graph(db_session)
+    with db_session.bind.connect() as conn:
+        before = _dangling_count(conn)
+    assert before == 0
+    obj = db_session.get(SM, sid)
+    db_session.delete(obj)
+    db_session.commit()
+    counts = {t: db_session.execute(text(f"SELECT COUNT(*) FROM {t}")).scalar()
+              for t in ("audio_tracks", "transcript_segments", "dialogue_utterances")}
+    assert counts == {"audio_tracks": 0, "transcript_segments": 0, "dialogue_utterances": 0}
+    assert _dangling_count(db_session.bind.connect()) == 0
+
+
+def test_F3_delete_audio_track_sets_null_keeps_raw(db_session):
+    """F3: deleting AudioTrack SETs NULL the FK; RAW segment survives, text intact."""
+    sid = _seed_full_graph(db_session)
+    with db_session.bind.connect() as conn:
+        conn.execute(text("PRAGMA foreign_keys=ON"))
+        conn.execute(text("DELETE FROM audio_tracks WHERE session_id=:s"), {"s": sid})
+        conn.commit()
+    segs = db_session.execute(
+        text("SELECT COUNT(*), COUNT(audio_track_id) FROM transcript_segments")
+    ).fetchone()
+    raw_text = db_session.execute(
+        text("SELECT text FROM transcript_segments")
+    ).scalar()
+    assert segs[0] == 1          # RAW segment still present
+    assert segs[1] == 0          # its audio_track_id is NULL
+    assert raw_text == "RAW MUST SURVIVE"
+    assert _dangling_count(db_session.bind.connect()) == 0
+
+
+def test_F4_delete_dialogue_utterance_cascades_junction_keeps_raw(db_session):
+    """F4: deleting DialogueUtterance cascades only junction; RAW untouched."""
+    sid = _seed_full_graph(db_session)
+    with db_session.bind.connect() as conn:
+        conn.execute(text("PRAGMA foreign_keys=ON"))
+        conn.execute(text("DELETE FROM dialogue_utterances WHERE session_id=:s"), {"s": sid})
+        conn.commit()
+    jc = db_session.execute(text("SELECT COUNT(*) FROM dialogue_utterance_segments")).scalar()
+    raw = db_session.execute(text("SELECT COUNT(*), text FROM transcript_segments")).fetchone()
+    assert jc == 0               # junction cleared
+    assert raw[0] == 1           # RAW survives
+    assert raw[1] == "RAW MUST SURVIVE"
+    assert _dangling_count(db_session.bind.connect()) == 0
+
+
+def test_F5_delete_raw_segment_with_live_link_blocked(db_session):
+    """F5: deleting a RAW segment still referenced by DERIVED is RESTRICTed."""
+    _seed_full_graph(db_session)
+    with db_session.bind.connect() as conn:
+        conn.execute(text("PRAGMA foreign_keys=ON"))
+        with pytest.raises(Exception):  # IntegrityError (FK RESTRICT)
+            conn.execute(text("DELETE FROM transcript_segments"))
+            conn.commit()
+    # RAW and DERIVED both still present, no dangling introduced.
+    assert db_session.execute(text("SELECT COUNT(*) FROM transcript_segments")).scalar() == 1
+    assert db_session.execute(text("SELECT COUNT(*) FROM dialogue_utterances")).scalar() == 1
+    assert _dangling_count(db_session.bind.connect()) == 0
+
+
+def test_F6_delete_client_with_sessions_blocked(db_session):
+    """F6: deleting a Client that owns sessions is RESTRICTed."""
+    _seed_full_graph(db_session)
+    with db_session.bind.connect() as conn:
+        conn.execute(text("PRAGMA foreign_keys=ON"))
+        with pytest.raises(Exception):  # IntegrityError (FK RESTRICT)
+            conn.execute(text("DELETE FROM clients"))
+            conn.commit()
+    assert db_session.execute(text("SELECT COUNT(*) FROM clients")).scalar() == 1
+    assert db_session.execute(text("SELECT COUNT(*) FROM sessions")).scalar() == 1
+
+
+def test_F7_regenerate_derived_keeps_raw(db_session, tmp_path):
+    """F7: regenerate DERIVED layer (delete_by_session) leaves RAW intact."""
+    from db.repositories import DialogueRepository
+
+    exp_dir = _make_fake_experiment(tmp_path)
+    import_experiment(exp_dir, db_session)
+    raw_before = db_session.execute(
+        text("SELECT COUNT(*) FROM transcript_segments")
+    ).scalar()
+
+    # Regenerate DERIVED only.
+    repo = DialogueRepository(db_session)
+    deleted = repo.delete_by_session(
+        db_session.execute(
+            text("SELECT id FROM sessions WHERE source_session_id='fake_test_001'")
+        ).scalar()
+    )
+    db_session.commit()
+
+    raw_after = db_session.execute(
+        text("SELECT COUNT(*) FROM transcript_segments")
+    ).scalar()
+    junctions = db_session.execute(text("SELECT COUNT(*) FROM dialogue_utterance_segments")).scalar()
+    assert deleted == 2
+    assert raw_after == raw_before      # RAW not touched by derived regeneration
+    assert junctions == 0               # junction cleared with DERIVED
+    assert _dangling_count(db_session.bind.connect()) == 0
+
+
+def test_F8_two_step_delete_no_dangling(db_session):
+    """F8: delete AudioTrack then Session -> dangling=0 at each step."""
+    sid = _seed_full_graph(db_session)
+    with db_session.bind.begin() as conn:
+        conn.execute(text("PRAGMA foreign_keys=ON"))
+        conn.execute(text("DELETE FROM audio_tracks WHERE session_id=:s"), {"s": sid})
+        assert _dangling_count(conn) == 0
+        conn.execute(text("DELETE FROM sessions WHERE id=:s"), {"s": sid})
+        assert _dangling_count(conn) == 0
+        counts = {t: conn.execute(text(f"SELECT COUNT(*) FROM {t}")).scalar()
+                  for t in ("audio_tracks", "transcript_segments", "dialogue_utterances")}
+    assert counts == {"audio_tracks": 0, "transcript_segments": 0, "dialogue_utterances": 0}
+
+
+def test_F9_orm_remove_from_collection_deletes_derived_keeps_raw(db_session):
+    """F9: ORM delete-orphan via collection removes utterance + junction, RAW intact."""
+    from db.models import Session as SM
+
+    sid = _seed_full_graph(db_session)
+    sess = db_session.get(SM, sid)
+    utt = sess.dialogue_utterances[0]
+    sess.dialogue_utterances.remove(utt)
+    db_session.flush()
+    jc = db_session.execute(text("SELECT COUNT(*) FROM dialogue_utterance_segments")).scalar()
+    raw = db_session.execute(text("SELECT COUNT(*), text FROM transcript_segments")).fetchone()
+    assert jc == 0
+    assert raw[0] == 1 and raw[1] == "RAW MUST SURVIVE"
+    db_session.commit()
+    assert _dangling_count(db_session.bind.connect()) == 0
+
+
+def test_F10_idempotent_reimport_regression(db_session, tmp_path):
+    """F10: idempotent re-import still works and does not mutate/duplicate RAW."""
+    exp_dir = _make_fake_experiment(tmp_path)
+    r1 = import_experiment(exp_dir, db_session)
+    raw_after_first = db_session.execute(
+        text("SELECT COUNT(*) FROM transcript_segments")
+    ).scalar()
+    r2 = import_experiment(exp_dir, db_session)
+    assert r2.skipped and r2.session_id == r1.session_id
+    assert db_session.execute(
+        text("SELECT COUNT(*) FROM transcript_segments")
+    ).scalar() == raw_after_first
+    assert _dangling_count(db_session.bind.connect()) == 0
+
+
+def test_F11_incompatible_old_schema_reports_error_no_data_loss(db_engine, tmp_path):
+    """F11: an old v1 DB (FK NO ACTION) is rejected with a clear error; data untouched.
+
+    Reproduces the pre-B1 schema by creating the tables WITHOUT on-delete policies,
+    inserts a client+session, then asserts init_db/migrate raises SchemaMigrationError
+    and the rows are still present (the tool never auto-drops or overwrites them).
+    """
+    from sqlalchemy import text as _t
+    from db.migrations import SchemaMigrationError, migrate
+
+    db_path = tmp_path / "old_v1.db"
+    old_eng = create_engine(f"sqlite:///{db_path}")
+    with old_eng.begin() as c:
+        c.execute(_t("CREATE TABLE clients(id INTEGER PRIMARY KEY, display_name TEXT)"))
+        c.execute(_t("CREATE TABLE sessions(id INTEGER PRIMARY KEY, client_id INTEGER REFERENCES clients(id))"))  # NO ACTION (v1)
+        c.execute(_t("CREATE TABLE schema_version(version INTEGER PRIMARY KEY)"))
+        c.execute(_t("INSERT INTO schema_version(version) VALUES(1)"))
+        c.execute(_t("INSERT INTO clients(id, display_name) VALUES(1, 'legacy')"))
+        c.execute(_t("INSERT INTO sessions(id, client_id) VALUES(1, 1)"))
+    old_eng.dispose()
+
+    # Re-open with the project engine (same path) and attempt init/migrate.
+    eng = get_engine(str(db_path))
+    with pytest.raises(SchemaMigrationError):
+        init_db(eng)
+
+    # Data must be intact — nothing was deleted or overwritten.
+    with eng.connect() as c:
+        c.execute(_t("PRAGMA foreign_keys=ON"))
+        clients = c.execute(_t("SELECT COUNT(*) FROM clients")).scalar()
+        sessions = c.execute(_t("SELECT COUNT(*) FROM sessions")).scalar()
+        ver = c.execute(_t("SELECT MAX(version) FROM schema_version")).scalar()
+    assert clients == 1 and sessions == 1
+    assert ver == 1  # version marker NOT silently bumped to 2
+
+
+def test_F12_fresh_v2_engine_is_compatible(tmp_path):
+    """F12: a freshly created v2 DB passes is_schema_compatible and migrate is a no-op-ish."""
+    from db.migrations import is_schema_compatible, migrate
+
+    db_path = tmp_path / "fresh_v2.db"
+    eng = get_engine(str(db_path))
+    init_db(eng)  # create v2 schema
+    assert is_schema_compatible(eng) is True
+    # migrate must not raise and must report v2 (already compatible).
+    assert migrate(eng) == 2
