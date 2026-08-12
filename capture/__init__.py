@@ -21,11 +21,25 @@ from .capturer import (
     SystemAudioCapture,
     WASAPINotAvailableError,
 )
+from .mic import (
+    DEFAULT_CHUNK,
+    MicrophoneCapture,
+    MicrophoneDeviceNotFoundError,
+    rms,
+)
+from .wav import write_wav
+from .track import RecordedTrack
 
 __all__ = [
     "CaptureConfig",
     "CaptureError",
+    "DEFAULT_CHUNK",
     "LoopbackDeviceNotFoundError",
+    "MicrophoneCapture",
+    "MicrophoneDeviceNotFoundError",
+    "RecordedTrack",
     "SystemAudioCapture",
     "WASAPINotAvailableError",
+    "rms",
+    "write_wav",
 ]

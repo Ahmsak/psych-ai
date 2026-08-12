@@ -32,9 +32,12 @@ from typing import List, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import pyaudiowpatch as pyaudio
-
-from capture import CaptureConfig, SystemAudioCapture
+from capture import (
+    CaptureConfig,
+    MicrophoneCapture,
+    SystemAudioCapture,
+    write_wav,
+)
 from transcription import StreamingTranscriber, TranscriptionConfig
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -47,62 +50,6 @@ def _rms(b: bytes) -> float:
         return 0.0
     s = struct.unpack("<%dh" % n, b[: n * 2])
     return (sum(x * x for x in s) / n) ** 0.5
-
-
-class MicRecorder:
-    """Minimal default-microphone recorder (experimental, blocking reads)."""
-
-    def __init__(self) -> None:
-        self.pa = pyaudio.PyAudio()
-        info = self.pa.get_default_input_device_info()
-        self.device_name = info["name"]
-        self.sample_rate = int(info["defaultSampleRate"])
-        self.channels = 1
-        self.stream = self.pa.open(
-            format=pyaudio.paInt16, channels=self.channels,
-            rate=self.sample_rate, frames_per_buffer=CHUNK, input=True,
-            input_device_index=int(info["index"]))
-        self.frames: List[bytes] = []
-        self.rms_max = 0.0
-        self.errors: List[str] = []
-        self._stop = threading.Event()
-        self._thread = threading.Thread(target=self._loop, daemon=True)
-
-    def start(self) -> None:
-        self._thread.start()
-
-    def _loop(self) -> None:
-        while not self._stop.is_set():
-            try:
-                data = self.stream.read(CHUNK, exception_on_overflow=False)
-            except Exception as exc:
-                self.errors.append(f"mic read failed: {exc!r}")
-                break
-            self.frames.append(data)
-            r = _rms(data)
-            if r > self.rms_max:
-                self.rms_max = r
-
-    def stop(self) -> None:
-        self._stop.set()
-        self._thread.join(timeout=3.0)
-        try:
-            self.stream.stop_stream()
-            self.stream.close()
-        finally:
-            self.pa.terminate()
-
-
-def _write_wav(path: str, frames: List[bytes], rate: int, ch: int) -> float:
-    wf = wave.open(path, "wb")
-    wf.setnchannels(ch)
-    wf.setsampwidth(2)
-    wf.setframerate(rate)
-    for f in frames:
-        wf.writeframes(f)
-    wf.close()
-    total = sum(len(f) for f in frames)
-    return round(total / (rate * 2 * ch), 1)
 
 
 def _transcribe_wav(path: str, rate: int, model: str,
@@ -153,13 +100,13 @@ def main() -> None:
             if r > loop_rms["max"]:
                 loop_rms["max"] = r
 
-    # Microphone stream (experimental recorder in this script).
-    mic = MicRecorder()
+    # Microphone stream (product component, capture/mic.py).
+    mic = MicrophoneCapture(chunk_size=CHUNK)
 
     print("[dual] loopback device:", loop._device_info["name"])
     print(f"[dual]   sr={loop.sample_rate} ch={loop.output_channels}")
     print("[dual] mic device:     ", mic.device_name)
-    print(f"[dual]   sr={mic.sample_rate} ch={mic.channels}")
+    print(f"[dual]   sr={mic.native_rate} ch={mic.native_channels}")
     print(f"[dual] recording to {base}")
     print("[dual] speak AND play remote audio; Ctrl+C to stop"
           + (f" (auto-stop {args.duration}s)" if args.duration else ""))
@@ -181,12 +128,13 @@ def main() -> None:
 
     mic_wav = os.path.join(base, "mic.wav")
     loop_wav = os.path.join(base, "loopback.wav")
-    mic_dur = _write_wav(mic_wav, mic.frames, mic.sample_rate, mic.channels)
-    loop_dur = _write_wav(loop_wav, loop_frames, loop.sample_rate,
-                          loop.output_channels)
+    mic_dur = write_wav(mic_wav, mic.frames, mic.native_rate,
+                        mic.native_channels)
+    loop_dur = write_wav(loop_wav, loop_frames, loop.sample_rate,
+                         loop.output_channels)
 
     print(f"[dual] transcribing mic.wav ({mic_dur}s)...")
-    mic_text = _transcribe_wav(mic_wav, mic.sample_rate, args.model,
+    mic_text = _transcribe_wav(mic_wav, mic.native_rate, args.model,
                                args.language)
     print(f"[dual] transcribing loopback.wav ({loop_dur}s)...")
     loop_text = _transcribe_wav(loop_wav, loop.sample_rate, args.model,
@@ -200,8 +148,8 @@ def main() -> None:
     manifest = {
         "mode": "dual",
         "wall_duration_sec": wall,
-        "mic": {"device": mic.device_name, "sample_rate": mic.sample_rate,
-                "channels": mic.channels, "duration_sec": mic_dur,
+        "mic": {"device": mic.device_name, "sample_rate": mic.native_rate,
+                "channels": mic.native_channels, "duration_sec": mic_dur,
                 "rms_max": round(mic.rms_max, 1),
                 "audio_captured": mic.rms_max > 1.0,
                 "errors": mic.errors,
@@ -221,8 +169,8 @@ def main() -> None:
     log_lines = [
         "=== Dual Capture Summary ===",
         f"Wall duration: {wall}s",
-        f"MIC      dev='{mic.device_name}' sr={mic.sample_rate} "
-        f"ch={mic.channels} dur={mic_dur}s rms_max={mic.rms_max:.1f} "
+        f"MIC      dev='{mic.device_name}' sr={mic.native_rate} "
+        f"ch={mic.native_channels} dur={mic_dur}s rms_max={mic.rms_max:.1f} "
         f"captured={'YES' if mic.rms_max > 1.0 else 'NO'}",
         f"LOOPBACK dev='{loop._device_info['name']}' sr={loop.sample_rate} "
         f"ch={loop.output_channels} dur={loop_dur}s "

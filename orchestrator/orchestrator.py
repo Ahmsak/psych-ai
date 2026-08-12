@@ -1,15 +1,102 @@
+import os
+from datetime import datetime
 from typing import Optional
 
 from session.session import Session
 
 
 class Orchestrator:
-    def __init__(self):
+    def __init__(self, recordings_dir: Optional[str] = None,
+                 db_path: Optional[str] = None):
         self.session = Session()
+        self._recordings_dir = recordings_dir
+        self._db_path = db_path
+        self._store = None
 
     def start_session(self):
         print("Orchestrator: starting session")
         self.session.start()
+
+    # ------------------------------------------------------------------ #
+    # Sprint 10: live recording lifecycle (UI -> Orchestrator -> Session
+    # -> Capture / Persistence). The Orchestrator only coordinates: it
+    # creates the capturers and the store, hands them to the Session and
+    # translates failures into a state the UI can render. No business
+    # logic, no PCM, no SQL.
+    # ------------------------------------------------------------------ #
+    def start_recording(self) -> dict:
+        """Start a live recording session. Returns the new state."""
+        if self.session.is_recording:
+            return self._state(error="session is already recording")
+
+        # Heavy / platform imports kept local so GUI startup stays fast.
+        from capture import (
+            CaptureConfig,
+            MicrophoneCapture,
+            RecordedTrack,
+            SystemAudioCapture,
+        )
+        from db.session_store import SessionStore
+
+        base = self._new_recording_dir()
+        mic = None
+        loop = None
+        try:
+            mic = MicrophoneCapture()
+            loop = SystemAudioCapture(CaptureConfig(mono_mix=True))
+            tracks = [
+                RecordedTrack("microphone", mic,
+                              os.path.join(base, "mic.wav")),
+                RecordedTrack("loopback", loop,
+                              os.path.join(base, "loopback.wav")),
+            ]
+            if self._store is None:
+                self._store = SessionStore(self._db_path)
+            self.session = Session()
+            self.session.start_recording(tracks, self._store)
+        except Exception as exc:
+            # Coordination duty: release whatever was created.
+            for cap in (mic, loop):
+                if cap is not None:
+                    try:
+                        cap.stop()
+                    except Exception:
+                        pass
+            return self._state(error=str(exc), failed=True)
+        return self._state()
+
+    def stop_recording(self) -> dict:
+        """Stop the live session (safe when nothing is recording)."""
+        try:
+            self.session.stop_recording()
+        except Exception as exc:
+            return self._state(error=str(exc), failed=True)
+        return self._state()
+
+    def session_state(self) -> dict:
+        """Current state for the UI (single source of truth: the Session)."""
+        return self._state()
+
+    # -- internals ------------------------------------------------------ #
+    def _state(self, error: Optional[str] = None,
+               failed: bool = False) -> dict:
+        s = self.session
+        return {
+            "state": "failed" if failed else s.state,
+            "is_recording": s.is_recording,
+            "elapsed_sec": s.elapsed_sec,
+            "session_id": s.record_id,
+            "error": error or s.error,
+        }
+
+    def _new_recording_dir(self) -> str:
+        root = self._recordings_dir or os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "recordings",
+        )
+        base = os.path.join(root, f"{datetime.now():%Y%m%d_%H%M%S}_session")
+        os.makedirs(base, exist_ok=True)
+        return base
 
     # ------------------------------------------------------------------ #
     # Sprint 9: Session processing pipeline.

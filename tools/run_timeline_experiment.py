@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import struct
 import sys
@@ -42,9 +43,13 @@ from typing import List, Optional
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import numpy as np
-import pyaudiowpatch as pyaudio
 
-from capture import CaptureConfig, SystemAudioCapture
+from capture import (
+    CaptureConfig,
+    MicrophoneCapture,
+    SystemAudioCapture,
+    write_wav,
+)
 from transcription import StreamingTranscriber, TranscriptionConfig
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -82,66 +87,24 @@ def to_unified(pcm: bytes, src_rate: int, src_channels: int) -> bytes:
     return np.clip(audio, -32768, 32767).astype(np.int16).tobytes()
 
 
-class TimedMicRecorder:
-    """Default-microphone recorder with timing, converts to unified format."""
+def _diag(thread_name: str, func: str, msg: str) -> None:
+    ts = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+    logging.debug(f"{ts} {thread_name} {func} {msg}")
 
-    def __init__(self) -> None:
-        self.pa = pyaudio.PyAudio()
-        info = self.pa.get_default_input_device_info()
-        self.device_name = info["name"]
-        self.native_rate = int(info["defaultSampleRate"])
-        self.native_channels = 1
-        self.stream = self.pa.open(
-            format=pyaudio.paInt16, channels=self.native_channels,
-            rate=self.native_rate, frames_per_buffer=CHUNK, input=True,
-            input_device_index=int(info["index"]))
-        self.frames: List[bytes] = []          # unified-format frames
-        self.rms_max = 0.0
-        self.errors: List[str] = []
-        self.record_start: Optional[float] = None
-        self.first_frame_at: Optional[float] = None
-        self._stop = threading.Event()
-        self._thread = threading.Thread(target=self._loop, daemon=True)
 
-    def start(self) -> None:
-        self.record_start = time.time()
-        self._thread.start()
+def _make_unified_mic() -> MicrophoneCapture:
+    """Microphone capture that stores frames in the UNIFIED format.
 
-    def _loop(self) -> None:
-        while not self._stop.is_set():
-            try:
-                data = self.stream.read(CHUNK, exception_on_overflow=False)
-            except Exception as exc:
-                self.errors.append(f"mic read failed: {exc!r}")
-                break
-            if self.first_frame_at is None:
-                self.first_frame_at = time.time()
-            unified = to_unified(data, self.native_rate, self.native_channels)
-            self.frames.append(unified)
-            r = _rms(unified)
-            if r > self.rms_max:
-                self.rms_max = r
-
-    def stop(self) -> None:
-        self._stop.set()
-        self._thread.join(timeout=3.0)
-        try:
-            self.stream.stop_stream()
-            self.stream.close()
-        finally:
-            self.pa.terminate()
+    The conversion that used to live inside ``TimedMicRecorder`` is now a
+    ``transform`` passed to the product component (capture/mic.py).
+    """
+    mic = MicrophoneCapture(chunk_size=CHUNK, transform=to_unified)
+    mic.set_output_format(UNIFIED_RATE, UNIFIED_CHANNELS)
+    return mic
 
 
 def _write_unified_wav(path: str, frames: List[bytes]) -> float:
-    wf = wave.open(path, "wb")
-    wf.setnchannels(UNIFIED_CHANNELS)
-    wf.setsampwidth(UNIFIED_SAMPWIDTH)
-    wf.setframerate(UNIFIED_RATE)
-    for f in frames:
-        wf.writeframes(f)
-    wf.close()
-    total = sum(len(f) for f in frames)
-    return round(total / (UNIFIED_RATE * UNIFIED_SAMPWIDTH * UNIFIED_CHANNELS), 2)
+    return write_wav(path, frames, UNIFIED_RATE, UNIFIED_CHANNELS, ndigits=2)
 
 
 def _transcribe_wav(path: str, model: str, language: Optional[str]) -> str:
@@ -208,6 +171,7 @@ def _iso(ts: Optional[float]) -> Optional[str]:
 
 
 def main() -> None:
+    _diag(threading.current_thread().name, "main", "entering")
     p = argparse.ArgumentParser(description="Sprint 5 unified audio timeline")
     p.add_argument("--model", default="small")
     p.add_argument("--language", default=None)
@@ -232,6 +196,7 @@ def main() -> None:
                   "first": None, "err": []}
 
     def loop_consumer():
+        _diag(threading.current_thread().name, "loop_consumer", "entering")
         for pcm in loop.iter_chunks(timeout=0.5):
             if loop_state["first"] is None:
                 loop_state["first"] = time.time()
@@ -240,8 +205,9 @@ def main() -> None:
             r = _rms(unified)
             if r > loop_state["rms_max"]:
                 loop_state["rms_max"] = r
+        _diag(threading.current_thread().name, "loop_consumer", "exiting")
 
-    mic = TimedMicRecorder()
+    mic = _make_unified_mic()
 
     print(f"[timeline] session={session_id} -> {base}")
     print(f"[timeline] unified format: {UNIFIED_RATE} Hz mono PCM16")
@@ -255,10 +221,13 @@ def main() -> None:
     t.start()
     try:
         while t.is_alive():
+            _diag(threading.current_thread().name, "main", f"loop iter t.alive={t.is_alive()} running={loop._running} qsize={loop._queue.qsize()}")
             t.join(timeout=0.5)
+            _diag(threading.current_thread().name, "main", f"after t.join t.alive={t.is_alive()}")
     except KeyboardInterrupt:
         print("\n[timeline] Ctrl+C — stopping")
     finally:
+        _diag(threading.current_thread().name, "main", "entering finally")
         loop.stop()
         t.join(timeout=3.0)
         mic.stop()
@@ -358,4 +327,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    _diag(threading.current_thread().name, "main", "pre-enter finally=False")
     main()
+    _diag(threading.current_thread().name, "main", "exited")

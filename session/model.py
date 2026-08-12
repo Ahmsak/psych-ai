@@ -17,7 +17,8 @@ import glob
 import json
 import os
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 from session.statistics import SessionStatistics, compute_statistics
 
@@ -27,6 +28,16 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PASS = "PASS"
 WARNING = "WARNING"
 FAIL = "FAIL"
+
+# Live recording lifecycle states (strings, like the levels above).
+IDLE = "idle"
+RECORDING = "recording"
+COMPLETED = "completed"
+FAILED = "failed"
+
+
+class SessionStateError(RuntimeError):
+    """Raised on an invalid lifecycle transition (e.g. double start)."""
 
 
 @dataclass
@@ -52,6 +63,10 @@ def _load_json(path: str) -> Optional[dict]:
     return None
 
 
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 class Session:
     """Main domain object for one consultation.
 
@@ -70,12 +85,119 @@ class Session:
         self._statistics: Optional[SessionStatistics] = None
         self.active = False
 
+        # Live recording lifecycle (Sprint 10 vertical slice).
+        self.state: str = IDLE
+        self.started_at: Optional[datetime] = None
+        self.ended_at: Optional[datetime] = None
+        self.error: Optional[str] = None
+        self.record_id: Optional[int] = None   # persistence row id
+        self._tracks: List[Any] = []
+        self._store: Optional[Any] = None
+
     # ------------------------------------------------------------------ #
     # Runtime lifecycle (kept for Orchestrator compatibility)
     # ------------------------------------------------------------------ #
     def start(self) -> None:
         self.active = True
         print("Session object started")
+
+    # -- Recording lifecycle ------------------------------------------- #
+    # The Session owns the boundaries of a consultation: when it starts,
+    # when it ends, and what was produced. It drives Capture and hands the
+    # results to ``store`` -- a narrow persistence port with three methods
+    # (create_session / add_audio_track / finalize_session). No SQL, no
+    # SQLAlchemy, no UI knowledge here.
+
+    @property
+    def is_recording(self) -> bool:
+        return self.state == RECORDING
+
+    @property
+    def elapsed_sec(self) -> float:
+        """Seconds since the recording started (0 when never started).
+
+        The single source of truth for the UI timer.
+        """
+        if self.started_at is None:
+            return 0.0
+        end = self.ended_at or _utcnow()
+        return max(0.0, (end - self.started_at).total_seconds())
+
+    def start_recording(self, tracks: List[Any], store: Any) -> None:
+        """Start ``tracks`` and register the session in ``store``.
+
+        On any capture failure every started track is stopped again and
+        nothing is persisted, so no false active session and no dangling
+        rows are left behind.
+        """
+        if self.is_recording:
+            raise SessionStateError("session is already recording")
+
+        started: List[Any] = []
+        try:
+            for track in tracks:
+                track.start()
+                started.append(track)
+        except Exception as exc:
+            for track in reversed(started):
+                try:
+                    track.stop()
+                except Exception:
+                    pass
+            self.state = FAILED
+            self.error = f"capture failed to start: {exc}"
+            self.started_at = None
+            self._tracks = []
+            raise
+
+        self._tracks = started
+        self._store = store
+        self.started_at = _utcnow()
+        self.state = RECORDING
+        self.active = True
+        self.error = None
+        self.record_id = store.create_session(started_at=self.started_at)
+
+    def stop_recording(self) -> Optional[int]:
+        """Stop capture, persist the tracks and finalize the session.
+
+        Safe to call when not recording (no-op returning the current
+        ``record_id``), so a Stop after a failed Start cannot break.
+        """
+        if not self.is_recording:
+            return self.record_id
+
+        for track in self._tracks:
+            try:
+                track.stop()
+            except Exception as exc:  # never block finalization
+                self.error = f"capture stop error: {exc}"
+
+        self.ended_at = _utcnow()
+        store = self._store
+        assert store is not None
+
+        for track in self._tracks:
+            result = track.save()
+            store.add_audio_track(
+                session_id=self.record_id,
+                source=track.source,
+                file_path=result["file_path"],
+                duration=result["duration"],
+                sample_rate=result["sample_rate"],
+                channels=result["channels"],
+                metadata={"errors": result["errors"]} if result["errors"] else None,
+            )
+
+        self.state = COMPLETED
+        self.active = False
+        store.finalize_session(
+            session_id=self.record_id,
+            ended_at=self.ended_at,
+            status=self.state,
+        )
+        self._tracks = []
+        return self.record_id
 
     # ------------------------------------------------------------------ #
     # Domain accessors

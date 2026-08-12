@@ -33,6 +33,9 @@ tmp/
 # --- Experiment artifacts (per-run, large, gitignored) ---
 experiments/
 
+# --- Live session recordings (audio, never committed) ---
+recordings/
+
 # --- Derived knowledge indexes (rebuildable from Markdown, ADR-006) ---
 *.db
 *.sqlite
