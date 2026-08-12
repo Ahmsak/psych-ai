@@ -29,3 +29,5 @@ shiboken6==6.11.1
 tokenizers==0.23.1
 tqdm==4.68.4
 typing_extensions==4.16.0
+sqlalchemy==2.0.52
+greenlet==3.5.5
