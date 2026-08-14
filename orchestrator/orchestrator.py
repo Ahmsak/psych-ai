@@ -124,6 +124,8 @@ class Orchestrator:
                 error="no session id available",
             )
 
+        from db.session_store import SessionStore
+
         if self._store is None:
             self._store = SessionStore(self._db_path)
 
