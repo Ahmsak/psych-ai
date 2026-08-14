@@ -234,6 +234,79 @@ class SessionStore:
             db.commit()
             return written
 
+    # ------------------------------------------------------------------ #
+    # Port: session viewer (read-only listing of completed sessions)
+    # ------------------------------------------------------------------ #
+    def list_sessions(self) -> list[dict]:
+        """Return all sessions as plain dicts (no ORM objects leak out).
+
+        Each dict: id, source_session_id, source, status, started_at,
+        ended_at. Ordered by id. The UI renders these without ever touching
+        SQLAlchemy.
+        """
+        with self._factory() as db:
+            rows = SessionRepository(db).list_all()
+            return [
+                {
+                    "id": int(r.id),
+                    "source_session_id": r.source_session_id,
+                    "source": r.source,
+                    "status": r.status,
+                    "started_at": _naive(r.started_at),
+                    "ended_at": _naive(r.ended_at),
+                }
+                for r in rows
+            ]
+
+    def get_session(self, session_id: int) -> Optional[dict]:
+        """Return one session as a plain dict, or None if absent.
+
+        Includes a lightweight ``audio_tracks`` summary (source, duration)
+        for the detail view. No ORM objects escape the port.
+        """
+        with self._factory() as db:
+            row = SessionRepository(db).get(session_id)
+            if row is None:
+                return None
+            tracks = AudioTrackRepository(db).get_by_session(session_id)
+            return {
+                "id": int(row.id),
+                "source_session_id": row.source_session_id,
+                "source": row.source,
+                "status": row.status,
+                "started_at": _naive(row.started_at),
+                "ended_at": _naive(row.ended_at),
+                "audio_tracks": [
+                    {
+                        "source": t.source,
+                        "duration": float(t.duration) if t.duration is not None else None,
+                    }
+                    for t in tracks
+                ],
+            }
+
+    def get_dialogue(self, session_id: int) -> list[dict]:
+        """Return the built Dialogue of a session as plain dicts.
+
+        Each utterance: id, speaker, start, end, text, source, confidence.
+        ``start``/``end`` are TRACK-RELATIVE (verbatim from TranscriptSegment,
+        NOT a cross-track session timeline — see Sprint 12 R1). Ordered by id.
+        """
+        with self._factory() as db:
+            rows = DialogueRepository(db).get_by_session(session_id)
+            return [
+                {
+                    "id": int(u.id),
+                    "speaker": u.speaker,
+                    "start": float(u.start),
+                    "end": float(u.end) if u.end is not None else None,
+                    "text": u.text,
+                    "source": u.source,
+                    "confidence": u.confidence,
+                }
+                for u in rows
+            ]
+
 
 def _naive(value: Optional[datetime]) -> Optional[datetime]:
     """Drop tzinfo: the existing schema stores naive UTC datetimes."""

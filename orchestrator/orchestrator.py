@@ -262,6 +262,33 @@ class Orchestrator:
         return self._dialogue_state(
             session_id=session_id, status="dialogued", utterances=written)
 
+    # ------------------------------------------------------------------ #
+    # Sprint 13: session viewer (read-only). Thin delegates to the store
+    # port. The Orchestrator holds no viewing logic and never touches the
+    # DB directly — it only forwards to SessionStore (which returns plain
+    # dicts, never ORM objects).
+    # ------------------------------------------------------------------ #
+    def list_sessions(self) -> list[dict]:
+        """List existing sessions for the viewer UI."""
+        if self._store is None:
+            from db.session_store import SessionStore
+            self._store = SessionStore(self._db_path)
+        return self._store.list_sessions()
+
+    def get_session(self, session_id: int) -> Optional[dict]:
+        """Return one session (details + track summary) for the viewer, or None."""
+        if self._store is None:
+            from db.session_store import SessionStore
+            self._store = SessionStore(self._db_path)
+        return self._store.get_session(session_id)
+
+    def get_dialogue(self, session_id: int) -> list[dict]:
+        """Return the built Dialogue of a session for the viewer."""
+        if self._store is None:
+            from db.session_store import SessionStore
+            self._store = SessionStore(self._db_path)
+        return self._store.get_dialogue(session_id)
+
     def _dialogue_state(
         self,
         *,
