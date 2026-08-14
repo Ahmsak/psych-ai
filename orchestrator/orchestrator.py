@@ -89,7 +89,123 @@ class Orchestrator:
             "error": error or s.error,
         }
 
-    def _new_recording_dir(self) -> str:
+    def transcribe_session(
+        self,
+        session_id: Optional[int] = None,
+        model: str = "small",
+        language: Optional[str] = None,
+    ) -> dict:
+        """Post-stop transcription of a completed live session.
+
+        The recording must be finished (status == "completed"). The
+        Orchestrator coordinates: read the session's audio tracks from the
+        store, run the file transcriber per track, persist RAW
+        TranscriptSegments, and update the session status. It holds no
+        transcription logic and never touches PCM or SQL directly (both
+        stay behind the transcription module and the persistence port).
+
+        Args:
+            session_id: live session id. Defaults to the current session.
+            model: faster-whisper model size (default "small").
+            language: optional language hint (default None = autodetect).
+
+        Returns a state dict:
+            {"session_id", "status", "tracks", "error"}
+        where ``tracks`` is a list of
+            {"source", "segments", "skipped", "error"}.
+        """
+        if session_id is None:
+            session_id = self.session.record_id
+        if session_id is None:
+            return self._transcribe_state(
+                session_id=None,
+                status="no_session",
+                tracks=[],
+                error="no session id available",
+            )
+
+        if self._store is None:
+            self._store = SessionStore(self._db_path)
+
+        status = self._store.get_session_status(session_id)
+        # Transcription is only valid for a finished recording. A
+        # partially-transcribed session (re-run) is allowed: existing
+        # tracks keep their segments; only empty tracks are filled.
+        if status not in ("completed", "transcribed_partial"):
+            return self._transcribe_state(
+                session_id=session_id,
+                status=status,
+                tracks=[],
+                error=f"session is not ready for transcription "
+                      f"(status={status})",
+            )
+
+        from transcription import transcribe_file
+
+        tracks = self._store.get_tracks(session_id)
+        self._store.set_session_status(session_id, "transcribing")
+
+        results = []
+        any_ok = False
+        any_err = False
+        for trk in tracks:
+            src = trk["source"]
+            path = trk["file_path"]
+            if not path or not os.path.exists(path):
+                results.append(
+                    {"source": src, "segments": 0, "skipped": 0,
+                     "error": "audio file missing"})
+                any_err = True
+                continue
+            try:
+                segs = transcribe_file(path, model_size=model,
+                                       language=language)
+                written = self._store.add_transcript_segments(
+                    session_id=session_id,
+                    audio_track_id=trk["id"],
+                    source=src,
+                    model=model,
+                    segments=segs,
+                )
+                skipped = 1 if written == 0 else 0
+                results.append(
+                    {"source": src, "segments": written, "skipped": skipped,
+                     "error": None})
+                if written or skipped:
+                    any_ok = True
+            except Exception as exc:
+                results.append(
+                    {"source": src, "segments": 0, "skipped": 0,
+                     "error": str(exc)})
+                any_err = True
+
+        if any_err and not any_ok:
+            self._store.set_session_status(session_id, "transcription_failed")
+            final_status = "transcription_failed"
+        elif any_err:
+            self._store.set_session_status(session_id, "transcribed_partial")
+            final_status = "transcribed_partial"
+        else:
+            self._store.set_session_status(session_id, "transcribed")
+            final_status = "transcribed"
+
+        return self._transcribe_state(
+            session_id=session_id, status=final_status, tracks=results)
+
+    def _transcribe_state(
+        self,
+        *,
+        session_id: Optional[int],
+        status: Optional[str],
+        tracks: list,
+        error: Optional[str] = None,
+    ) -> dict:
+        return {
+            "session_id": session_id,
+            "status": status,
+            "tracks": tracks,
+            "error": error,
+        }
         root = self._recordings_dir or os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             "recordings",

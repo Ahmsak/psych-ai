@@ -132,38 +132,15 @@ def _transcribe_wav(path: str, model: str, language: Optional[str]) -> str:
 def _transcribe_segments(path: str, model: str, language: Optional[str]) -> list:
     """Transcribe a unified WAV and keep per-segment timing.
 
-    Returns a list of {start, end, text, confidence} using faster-whisper's
-    native segment timestamps. Text is NOT modified. This is the data layer
-    for the Conversation Builder (Sprint 7): timing is preserved, no
-    analysis is performed.
+    Reuses the product file-transcriber so there is a single Whisper
+    entrypoint. Returns a list of {start, end, text, confidence} using
+    faster-whisper's native segment timestamps. Text is NOT modified.
+    This is the data layer for the Conversation Builder (Sprint 7):
+    timing is preserved, no analysis is performed.
     """
-    from faster_whisper import WhisperModel  # heavy dep, local import
+    from transcription import transcribe_file
 
-    wf = wave.open(path, "rb")
-    raw = wf.readframes(wf.getnframes())
-    rate = wf.getframerate()
-    wf.close()
-    audio = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
-    if rate != 16000 and audio.size:
-        dst = int(round(audio.size * 16000 / rate))
-        audio = np.interp(np.linspace(0, audio.size - 1, dst),
-                          np.arange(audio.size), audio).astype(np.float32)
-
-    m = WhisperModel(model, device="cpu", compute_type="int8")
-    segments, _info = m.transcribe(audio, language=language, beam_size=1,
-                                   vad_filter=True)
-    out = []
-    for s in segments:
-        text = s.text.strip()
-        if not text:
-            continue
-        out.append({
-            "start": round(float(s.start), 3),
-            "end": round(float(s.end), 3),
-            "text": text,  # unchanged Whisper text
-            "confidence": round(float(getattr(s, "avg_logprob", 0.0)), 4),
-        })
-    return out
+    return transcribe_file(path, model_size=model, language=language)
 
 
 def _iso(ts: Optional[float]) -> Optional[str]:
