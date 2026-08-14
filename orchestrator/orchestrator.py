@@ -194,6 +194,89 @@ class Orchestrator:
         return self._transcribe_state(
             session_id=session_id, status=final_status, tracks=results)
 
+    def build_dialogue(
+        self,
+        session_id: Optional[int] = None,
+    ) -> dict:
+        """Build a structured Dialogue from the session's TranscriptSegments.
+
+        Requires status == "transcribed" (post-stop transcription finished).
+        The Orchestrator coordinates: read RAW TranscriptSegments from the
+        store, run the dialogue builder (pure, no DB), persist
+        DialogueUtterances through the store port, and update the session
+        status. It holds no dialogue-building logic and never touches SQL
+        directly (stays behind the persistence port).
+
+        Speaker is assigned by source track (microphone->psychologist,
+        loopback->client) inside the builder -- NOT diarization. Timestamps
+        are track-relative (verbatim from TranscriptSegment), NOT a
+        cross-track aligned session timeline (ADR-007 alignment is future).
+
+        Returns a state dict:
+            {"session_id", "status", "utterances", "error"}
+        """
+        if session_id is None:
+            session_id = self.session.record_id
+        if session_id is None:
+            return self._dialogue_state(
+                session_id=None, status="no_session", utterances=0,
+                error="no session id available",
+            )
+
+        from db.session_store import SessionStore
+
+        if self._store is None:
+            self._store = SessionStore(self._db_path)
+
+        status = self._store.get_session_status(session_id)
+        if status != "transcribed":
+            return self._dialogue_state(
+                session_id=session_id, status=status, utterances=0,
+                error=f"session is not ready for dialogue building "
+                      f"(status={status})",
+            )
+
+        from dialogue.builder import build_dialogue, validate_dialogue
+        from dialogue.model import Dialogue
+
+        # Group RAW segments by source track (microphone / loopback).
+        segs = self._store.get_transcript_segments(session_id)
+        by_source: dict = {}
+        for s in segs:
+            by_source.setdefault(s["source"] or s["speaker"], []).append(s)
+
+        dialogue: Dialogue = build_dialogue(by_source)
+        failures = validate_dialogue(dialogue)
+        if failures:
+            self._store.set_session_status(session_id, "dialogue_failed")
+            return self._dialogue_state(
+                session_id=session_id, status="dialogue_failed",
+                utterances=0, error="; ".join(failures),
+            )
+
+        written = self._store.add_dialogue_utterances(
+            session_id=session_id,
+            utterances=[u.to_dict() for u in dialogue.utterances],
+        )
+        self._store.set_session_status(session_id, "dialogued")
+        return self._dialogue_state(
+            session_id=session_id, status="dialogued", utterances=written)
+
+    def _dialogue_state(
+        self,
+        *,
+        session_id: Optional[int],
+        status: Optional[str],
+        utterances: int,
+        error: Optional[str] = None,
+    ) -> dict:
+        return {
+            "session_id": session_id,
+            "status": status,
+            "utterances": utterances,
+            "error": error,
+        }
+
     def _transcribe_state(
         self,
         *,

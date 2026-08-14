@@ -14,9 +14,10 @@ from datetime import datetime
 from typing import Optional
 
 from db.database import get_engine, get_session_factory, init_db
-from db.models import TranscriptSegment
+from db.models import DialogueUtterance, TranscriptSegment
 from db.repositories import (
     AudioTrackRepository,
+    DialogueRepository,
     SessionRepository,
     TranscriptRepository,
 )
@@ -167,6 +168,71 @@ class SessionStore:
                 repo.bulk_create(objs)
             db.commit()
             return len(objs)
+
+    def get_transcript_segments(self, session_id: int) -> list[dict]:
+        """Return RAW transcript segments of a session as plain dicts.
+
+        SQLAlchemy objects are NOT returned, so the ORM layer stays behind
+        this port (Session never sees it). Each dict: id, audio_track_id,
+        source, speaker, start, end, text, confidence. ``source`` is the
+        AudioTrack source ("microphone"/"loopback"); ``speaker`` is the
+        role already assigned by SPEAKER_MAP.
+        """
+        with self._factory() as db:
+            tracks = {int(t.id): t.source for t in AudioTrackRepository(db).get_by_session(session_id)}
+            segs = TranscriptRepository(db).get_by_session(session_id)
+            return [
+                {
+                    "id": int(s.id),
+                    "audio_track_id": int(s.audio_track_id) if s.audio_track_id is not None else None,
+                    "source": tracks.get(int(s.audio_track_id)) if s.audio_track_id is not None else None,
+                    "speaker": s.speaker,
+                    "start": float(s.start),
+                    "end": float(s.end) if s.end is not None else None,
+                    "text": s.text,
+                    "confidence": s.confidence,
+                }
+                for s in segs
+            ]
+
+    def add_dialogue_utterances(
+        self,
+        *,
+        session_id: int,
+        utterances: list[dict],
+    ) -> int:
+        """Persist built DialogueUtterances for a session.
+
+        Idempotent per session: existing utterances are deleted first, so a
+        repeat call rebuilds the derived layer without duplicates. RAW
+        transcript_segments are untouched (DB-level ON DELETE CASCADE clears
+        only the junction rows).
+
+        ``utterances`` is a list of {"speaker", "start", "text", "source",
+        "end", "confidence", "original_segment_id"}. Returns the number
+        written.
+        """
+        with self._factory() as db:
+            repo = DialogueRepository(db)
+            repo.delete_by_session(session_id)  # clear derived layer only
+            written = 0
+            for u in utterances:
+                repo.create(
+                    session_id=session_id,
+                    speaker=u["speaker"],
+                    start=float(u["start"]),
+                    end=float(u["end"]) if u.get("end") is not None else None,
+                    text=u["text"],
+                    source=u.get("source"),
+                    confidence=u.get("confidence"),
+                    normalization_version="12.0",
+                    original_segment_ids=(
+                        [u["original_segment_id"]] if u.get("original_segment_id") is not None else None
+                    ),
+                )
+                written += 1
+            db.commit()
+            return written
 
 
 def _naive(value: Optional[datetime]) -> Optional[datetime]:
