@@ -44,3 +44,14 @@
 - Модель работает на CPU (device="cpu", int8) — скорость зависит от
   размера модели; "small" на слабом CPU может отставать от реального
   времени при коротких окнах.
+
+## Второй input-path: post-stop transcription (file_transcriber)
+
+`transcription/file_transcriber.py::transcribe_file(path)` — НЕ второй
+STT-движок, а второй путь к ТОМУ ЖЕ faster-whisper backend. Вместо
+живого PCM-потока он читает УЖЕ записанный WAV, ресемплит к 16 кГц mono
+float32 и возвращает RAW сегменты `{start, end, text, confidence}` с
+таймингами относительно начала файла. Используется Orchestrator-ом в
+post-stop транскрипции (Sprint 11): готовые WAV транскрибируются и
+RAW TranscriptSegments сохраняются в SQLite на каждый AudioTrack. Это НЕ
+online/streaming транскрипция — обработка завершённого файла.

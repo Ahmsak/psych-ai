@@ -4,6 +4,79 @@
 
 ---
 
+## 2026-08-14 — Sprint 11: Post-stop Transcription (fix 9e15683)
+
+### Что сделано
+- `Orchestrator.transcribe_session(session_id)` — пост-фактум транскрипция
+  завершённой live-сессии (status=`completed`/`transcribed_partial`).
+- `transcription/file_transcriber.py::transcribe_file(path)` — тот же
+  faster-whisper backend (small, cpu, int8), что у StreamingTranscriber, но
+  input-путь из готового WAV. Возвращает RAW сегменты
+  {start,end,text,confidence} с таймингами относительно начала файла.
+- `db/session_store.py::SessionStore.add_transcript_segments` — персистит
+  RAW TranscriptSegment на трек; idempotent (пустой трек → skipped, повтор
+  не дублирует). `set_session_status` ведёт
+  `transcribing`→`transcribed`/`transcribed_partial`/`transcription_failed`.
+- Два AudioTrack (microphone, loopback) транскрибируются по отдельности;
+  пустой loopback (0 кадров) даёт 0 сегментов, текст не порождает.
+- fix 9e15683: добавлен локальный импорт `SessionStore` в
+  `transcribe_session` (было `NameError: name 'SessionStore' is not defined`).
+
+### Проверки, реально прошедшие
+- `tests/test_post_stop_transcription.py` — 12 passed.
+- Полный штатный прогон `Orchestrator.transcribe_session(session_id=1)`
+  на реальной Session 1 (без runtime-подмен): завершился за ~26с,
+  status=`transcribed`.
+- Результат прогона Session 1:
+  - microphone: 4 TranscriptSegment
+    (2.00–6.88 «1 2 3 1 2»; 6.88–8.68 «тесто от запись»;
+     8.68–11.58 «мы делаем тестовую запись»; 11.58–13.58 «останавливаю»);
+  - loopback: 0 сегментов (файл 44 байта, 0 кадров — тишина);
+  - WAV SHA256 mic и loopback ДО/ПОСЛЕ идентичны (файлы не изменены);
+  - dangling FK = 0 (seg→track, seg→session, track→session).
+- pytest -q по репозиторию: 215 tests (из них 12 — Sprint 11).
+
+### Commit hashes
+- ef8a843 feat: add post-stop transcription (Sprint 11)
+- 9e15683 fix: import SessionStore in post-stop transcription (Sprint 11 fix)
+
+### Важные дефекты и исправления
+- Дефект: `transcribe_session` падал с NameError (SessionStore не
+  импортирован). Исправлен 9e15683 (локальный импорт, как в
+  start_recording). Подтверждено штатным прогоном без monkey-patch.
+
+---
+
+## 2026-08-14 — Sprint 10: Live Recording Vertical Slice
+
+### Что сделано
+- `Orchestrator.start_recording()/stop_recording()` — полный вертикальный
+  срез: capture (mic + loopback) → RecordedTrack → WAV → SessionStore.
+- `capture/mic.py` (MicrophoneCapture) — продуктовый захват микрофона,
+  извлечён из tools/ (был MicRecorder/TimedMicRecorder).
+- `capture/track.py` (RecordedTrack), `capture/wav.py` (write_wav) — audio
+  I/O, без знания о Session/UI/БД.
+- `session/session.py` — ре-экспорт доменной Session (model.py), НЕ
+  заглушка (ADR-009). `session.start_recording(tracks, store)`.
+- `db/session_store.py` (SessionStore) — порт персистентности: создаёт
+  сессию + 2 AudioTrack, прячет SQLAlchemy от Session (ADR-011).
+- Служебные проверки (tools/, НЕ продукт):
+  `check_recording_slice.py` (real-device smoke),
+  `check_recording_errors.py` (error-path: stop-before-start, capture
+  failure, second start, no-op stop).
+
+### Проверки, реально прошедшие
+- `tests/test_ui_recording_slice.py` (15), `tests/test_capture_unit.py` (6),
+  `tests/test_db.py` (28).
+- `python tools/check_recording_slice.py --seconds 3` — сессия completed,
+  2 трека (microphone + loopback) записаны, WAV на диске.
+- `python tools/check_recording_errors.py` — ALL CHECKS PASSED.
+
+### Commit hash
+- bc30317 feat: add live recording vertical slice (Sprint 10)
+
+---
+
 ## 2026-07-25 — Sprint 10.1: Integration Investigation (INV-001)
 
 ### Расследование (эксперимент 20260725_181758_timeline)

@@ -200,3 +200,19 @@ API:
 metadata есть/парсится/полон; WAV открывается и совпадает с единым
 форматом; audio_captured=YES ⇒ кадры есть; при наличии звука есть
 транскрипция; ошибки устройства сообщаются. exit!=0 при любом FAIL.
+
+## Live Recording slice — служебные проверки (tools/, НЕ продукт)
+Эти скрипты проверяют продуктовый вертикальный срез записи (Sprint 10) на
+реальных устройствах и БД, минуя pytest (hardware/slow). Не часть продукта.
+
+- `tools/check_recording_slice.py --seconds 3` — реальный smoke: открывает
+  микрофон + WASAPI loopback, пишет сессию через Orchestrator, печатает
+  что попало в SQLite (session status, 2 трека, существование/размер WAV).
+  RESULT OK, если status=`completed` и оба трека (microphone, loopback)
+  присутствуют.
+- `tools/check_recording_errors.py [--db data/errors_check.db]` — error-path
+  проверки реального Orchestrator: stop до start (no-op, 0 строк),
+  сбой старта захвата (state=failed, 0 строк), stop после сбоя (безопасно),
+  повторный start после сбоя (работает), второй start при записи (отказ,
+  без дубля сессии), stop→completed + 1 session/2 tracks, второй stop
+  (no-op). RESULT: ALL CHECKS PASSED / FAILURES.

@@ -12,10 +12,20 @@ faster-whisper + ctranslate2 (STT).
 
 ## Состояние
 
-- Завершено: Sprint 3 — рабочий MVP потоковой транскрипции системного
-  звука (loopback → capture → transcription → консоль).
-- Текущий Sprint: 3.5 — инфраструктура знаний проекта (этот документ).
-- Следующий этап: см. docs/PROJECT_STATE.md → Next Goal.
+- Завершено: Sprint 10 — Live Recording Vertical Slice. По команде
+  пользователя захватываются одновременно микрофон (психолог) и системный
+  звук (loopback, собеседник) в ДВА отдельных WAV; жизненный цикл сессии
+  (start/stop) ведёт Session, дорожки и сессия пишутся в SQLite
+  (AudioTracks через SessionStore).
+- Завершено: Sprint 11 — Post-stop Transcription. После записи готовые WAV
+  транскрибируются (faster-whisper, тот же backend, что у потокового
+  пути), RAW TranscriptSegments сохраняются в SQLite на каждый трек.
+- Завершено ранее: Sprint 3 — MVP потоковой транскрипции системного звука
+  (loopback → capture → transcription → консоль, run_stream.py).
+- Текущий статус и следующий шаг: см. docs/PROJECT_STATE.md → Current Goal /
+  Next Goal (авторитетный источник по состоянию).
+- GUI (PySide6) пока не запускается в активном интерпретаторе — live slice и
+  post-stop работают через Orchestrator + служебные проверки, вне GUI.
 
 ## Ключевое архитектурное правило
 

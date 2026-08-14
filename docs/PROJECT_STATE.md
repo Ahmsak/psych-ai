@@ -34,30 +34,51 @@
 
 ## Current Sprint
 
-Sprint 10.1 — Integration Investigation (INV-001). Первый реальный e2e
-(эксперимент 20260725_181758_timeline) дал Overall WARNING, 0 FAIL —
-архитектура работоспособна. Расследованы 2 проблемы:
-- №1 (psychologist=0): причина — почти пустой сигнал микрофона
-  (peak 3.6%) → Whisper 0 сегментов. Не баг конвейера. Код-дефект
-  МАСКИРОВКИ (расхождение mic_transcription.txt ↔ mic_segments.json:
-  галлюцинации на тишине) ИСПРАВЛЕН: текст .txt строится из того же
-  сегментного пути; добавлен sensor «transcription/segments mismatch»
-  (check_experiment + harness) + тест. pytest 70 passed.
-- №2 (обе стороны на MIC): смешивание ДО PsychAI (corr огибающих 0.952
-  по offset; в коде микса нет). Аудио-тракт Windows/Realtek/акустика —
-  по правилу НЕ исправляется, только рекомендации.
-ВАЖНО: WARNING «no psychologist utterances» на этом эксперименте —
-ПРАВДИВЫЙ сигнал (голоса психолога нет в записи). PASS достижим только
-на новой записи с исправным микрофоном (устранить причины №2); подгонять
-реплики = фабрикация, не делается. Отчёты: docs/investigations/INV-001-*.
-
-Sprint 10 — Integration Harness — завершён.
+Sprint 11 — Post-stop Transcription — завершён.
+Sprint 10 — Live Recording Vertical Slice — завершён.
 Sprint 9 — Orchestrator Pipeline — завершён.
 Sprint 8 — Session Domain Model — завершён.
 Sprint 7 — Conversation Builder — завершён.
 Sprint 6 — Session Alignment — завершён.
 Sprint 5 — единый формат аудио, metadata.json — завершён.
 Sprint 4.0 — двухпотоковый захват (ADR-006) — завершён.
+
+### Sprint 11 — Post-stop Transcription (2026-08-14)
+- `Orchestrator.transcribe_session(session_id)` — пост-фактум
+  транскрипция завершённой live-сессии (status=`completed`/`transcribed_partial`).
+- `transcription/file_transcriber.py::transcribe_file(path)` — тот же
+  faster-whisper backend, что у StreamingTranscriber, но input-путь из
+  готового WAV (ADR-012: НЕ второй backend). Возвращает RAW сегменты
+  {start,end,text,confidence} с таймингами относительно начала файла.
+- `db/session_store.py::SessionStore.add_transcript_segments` — персистит
+  RAW TranscriptSegment на трек (idempotent: пустой трек → skipped,
+  повторный прогон не дублирует). `set_session_status` переводит сессию в
+  `transcribing`→`transcribed`/`transcribed_partial`/`transcription_failed`.
+- Два AudioTrack (microphone, loopback) транскрибируются по отдельности;
+  пустой loopback (0 кадров) корректно даёт 0 сегментов, текст не порождает.
+- fix (9e15683): добавлен локальный импорт `SessionStore` в
+  `transcribe_session` (было NameError).
+- Реальный прогон Session 1: status=`transcribed`, 4 microphone-сегмента,
+  0 loopback-сегментов, WAV SHA256 не изменились, dangling FK=0.
+- Тесты: `tests/test_post_stop_transcription.py` (12). Всего в репозитории
+  215 тестов pytest; из них 12 относятся к Sprint 11, остальные — вне
+  Sprint 10/11 (см. незакоммиченные файлы в рабочем дереве).
+
+### Sprint 10 — Live Recording Vertical Slice (2026-08-14)
+- `Orchestrator.start_recording()/stop_recording()` — полный вертикальный
+  срез: capture (mic + loopback) → RecordedTrack → WAV → SessionStore.
+- `capture/mic.py` (MicrophoneCapture) — продуктовый захват микрофона,
+  извлечён из tools/ (ADR-010). `capture/track.py` (RecordedTrack),
+  `capture/wav.py` (write_wav) — audio I/O, без знания о Session/UI/БД.
+- `session/session.py` — ре-экспорт доменной Session (model.py), НЕ
+  заглушка (ADR-009). `session.start_recording(tracks, store)` ведёт
+  жизненный цикл записи.
+- `db/session_store.py` (SessionStore) — порт персистентности: создаёт
+  сессию + 2 AudioTrack, прячет SQLAlchemy от Session (ADR-011).
+- Служебные проверки (tools/, НЕ продукт): `check_recording_slice.py`
+  (real-device smoke), `check_recording_errors.py` (error-path checks).
+- Тесты: `tests/test_ui_recording_slice.py` (15), `tests/test_capture_unit.py`
+  (6), `tests/test_db.py` (28).
 
 ## Current Goal
 
@@ -82,18 +103,26 @@ Memory и LLM-анализ — будущие спринты. Пока НЕ на
 - ffmpeg отсутствует в PATH. faster-whisper работает без него
   (декодирование через пакет av), но заявленная в окружении утилита
   недоступна из shell.
-- Слово на границе окна транскрипции может распознаться неточно
-  (следствие ADR-004, ждёт Overlap-спринта).
-
-## Technical Debt
-
-- session/session.py — заглушка (флаг active), не связана с конвейером STT.
-- ROADMAP.md — крупноблочный, без привязки к спринтам.
 - Внутри faster-whisper включён vad_filter=True (встроенный Silero-фильтр
   против галлюцинаций на тишине). Не отдельный VAD-модуль; решение об
   отключении за владельцем проекта.
-- tests/ — только ручные проверки capture; автоматических тестов
-  transcription/orchestrator нет.
+- Слово на границе окна транскрипции может распознаться неточно
+  (следствие ADR-004, ждёт Overlap-спринта).
+- post-stop транскрипция на CPU/int8 (small) ~6–9с инференса на ~3–5с
+  аудио; полная session 13.9с занимает ~25–30с. Без progress-вывода это
+  читается как «зависание». Функционально завершается (проверено на
+  Session 1).
+
+## Technical Debt
+
+- ROADMAP.md — крупноблочный, без привязки к спринтам.
+- tests/ — автоматических e2e-тестов транскрипции на реальном устройстве
+  нет (hardware/slow помечены в pytest.ini; покрыты unit-тесты формата,
+  ресемпла, silence-gate, persistence, post-stop оркестрации).
+- Незакоммиченные в рабочем дереве файлы (benchmark/dialogue/normalize
+  утилиты и тесты, capture/capturer.py modified, docs/investigations/
+  INV-001-model-selection.md) — вне Sprint 10/11, в эту документацию не
+  включены.
 
 ## Deferred (отдельные будущие спринты — сейчас НЕ реализовывать)
 
@@ -106,4 +135,5 @@ Memory и LLM-анализ — будущие спринты. Пока НЕ на
 
 ## Last Update
 
-2026-07-25 — Sprint 4.0 шаг 1 (харнесс экспериментов захвата, loopback).
+2026-08-14 — Sprint 11 (post-stop transcription) + Sprint 10 (live
+recording slice) завершены; документация приведена к фактическому коду.

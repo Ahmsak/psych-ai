@@ -6,26 +6,39 @@
 ## Назначение
 PsychAI — ассистент для психологов (помогает специалисту, НЕ заменяет
 его). Локальное приложение под Windows: захват аудио разговора →
-потоковая транскрипция → (в будущем) анализ в помощь специалисту.
+потоковая транскрипция (MVP) → post-stop транскрипция записанных дорожек
+→ (в будущем) анализ в помощь специалисту.
 
 ## Стек (фиксирован, версии не менять)
 Python 3.12 · PySide6 (UI) · faster-whisper + ctranslate2 (STT) ·
 PyAudioWPatch (WASAPI-захват).
 
 ## Структура проекта
-- capture/        — захват аудио (WASAPI loopback), вход в конвейер
-- transcription/  — STT (StreamingTranscriber), только распознавание
+- capture/        — захват аудио (WASAPI loopback + микрофон), вход в
+  конвейер. capturer.py (loopback), mic.py (MicrophoneCapture,
+  продуктовый аналог), track.py (RecordedTrack: capture→WAV),
+  wav.py (write_wav). Знает только аудио I/O.
+- transcription/  — STT (StreamingTranscriber для live-потока;
+  transcribe_file в file_transcriber.py для post-stop WAV). Один
+  faster-whisper backend, два input-пути.
 - conversation/   — сборка структурированного диалога (продуктовый
   модуль; conversation.json; без анализа/LLM)
+- db/             — SQLite-persistence (SQLAlchemy). session_store.py —
+  SessionStore: порт персистентности (Session не видит SQLAlchemy).
+  models.py/repositories.py/migrations.py/database.py.
 - orchestrator/   — координация жизненного цикла + конвейер обработки
   Session (Pipeline: Load/Validate/Statistics/Finalize; без бизнес-логики)
+  + start_recording/stop_recording (live slice) + transcribe_session
+  (post-stop transcription).
 - llm/            — анализ текста (пока пусто, будущее)
-- ui/             — интерфейс (PySide6)
+- ui/             — интерфейс (PySide6); state.py — Qt-свободная логика
 - session/        — Session: главный доменный объект консультации,
   единая точка входа Orchestrator (metadata/timeline/conversation/
-  statistics/validation; без LLM)
+  statistics/validation; без LLM). model.py — домен; session.py —
+  ре-экспорт (НЕ заглушка).
 - tools/          — служебные скрипты и эксперименты (не код продукта)
-- experiments/    — артефакты прогонов (gitignored)
+- recordings/     — runtime-артефакты live-сессий (gitignored; аудио
+  не коммитится). experiments/ — артефакты экспериментов (gitignored).
 - docs/           — система знаний проекта
 - run_stream.py   — консольный MVP потоковой транскрипции
 

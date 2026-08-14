@@ -13,6 +13,12 @@
   tools/verify_environment.py)
 - ✔ Sprint 3.6 — аудит системы знаний (DEVELOPMENT_WORKFLOW,
   DEFINITION_OF_DONE, git/GitHub-правила)
+- ✔ Sprint 4–11 — двухпотоковый захват (ADR-006), единый формат аудио,
+  Session Domain Model (ADR-009), Conversation Builder, Session Alignment,
+  Orchestrator Pipeline, Integration Harness, а затем Live Recording
+  Vertical Slice (Sprint 10: mic+loopback → WAV → SQLite) и Post-stop
+  Transcription (Sprint 11: WAV → TranscriptSegments в SQLite).
+  Детали и текущий статус: docs/PROJECT_STATE.md.
 
 ## Дальше (порядок не зафиксирован — решение владельца проекта)
 

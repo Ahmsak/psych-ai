@@ -10,6 +10,16 @@
 (короткий формат Title/Status/Context/Decision/Consequences). Этот лог
 хранит ADR-001…005 и остаётся действительным.
 
+Сквозной список ADR:
+- ADR-001…005 — в этом файле (ниже).
+- ADR-006 — Markdown как единственный источник истины знаний (docs/adr/ADR-006-dual-audio-streams.md).
+- ADR-007 — Stream alignment by first frame (docs/adr/ADR-007-stream-alignment-by-first-frame.md).
+- ADR-008 — Conversation Builder (docs/adr/ADR-008-conversation-builder.md).
+- ADR-009 — Session как главный доменный объект (docs/adr/ADR-009-session-domain-model.md).
+- ADR-010 — Продуктовый захват микрофона (docs/adr/ADR-010-product-microphone-capture.md).
+- ADR-011 — Порт персистентности Session → SessionStore (docs/adr/ADR-011-session-persistence-port.md).
+- ADR-012 — Post-stop transcription = второй input-path к тому же backend (docs/adr/ADR-012-post-stop-transcription-input-path.md).
+
 ---
 
 ## ADR-001 — Orchestrator как единственный координатор
