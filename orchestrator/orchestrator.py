@@ -277,6 +277,16 @@ class Orchestrator:
             "error": error,
         }
 
+    def _new_recording_dir(self) -> str:
+        """Create and return a fresh per-session recordings directory."""
+        root = self._recordings_dir or os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "recordings",
+        )
+        base = os.path.join(root, f"{datetime.now():%Y%m%d_%H%M%S}_session")
+        os.makedirs(base, exist_ok=True)
+        return base
+
     def _transcribe_state(
         self,
         *,
@@ -291,13 +301,6 @@ class Orchestrator:
             "tracks": tracks,
             "error": error,
         }
-        root = self._recordings_dir or os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "recordings",
-        )
-        base = os.path.join(root, f"{datetime.now():%Y%m%d_%H%M%S}_session")
-        os.makedirs(base, exist_ok=True)
-        return base
 
     # ------------------------------------------------------------------ #
     # Sprint 9: Session processing pipeline.
