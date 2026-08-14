@@ -7,6 +7,8 @@ returned by ``Orchestrator.session_state()``.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 # Source/speaker role labels (source-based, NOT diarization). Mirrors the
 # product mapping in conversation.builder.SPEAKER_BY_SOURCE; kept local so
 # ui/state stays dependency-free (no Qt, no db, no domain import).
@@ -38,10 +40,16 @@ def button_text(state: dict) -> str:
 
 
 def _fmt_dt(value) -> str:
-    """Render a datetime (naive UTC) as YYYY-MM-DD HH:MM:SS, or '—' if None."""
+    """Render a datetime as LOCAL time. The stored value is naive UTC
+    (see SessionStore._naive); interpret it as UTC and convert to the
+    machine's local timezone before formatting, so the viewer shows local
+    wall-clock time rather than raw UTC figures.
+
+    Returns '—' if value is None.
+    """
     if value is None:
         return "—"
-    return value.strftime("%Y-%m-%d %H:%M:%S")
+    return value.replace(tzinfo=timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _fmt_span(started, ended) -> str:
