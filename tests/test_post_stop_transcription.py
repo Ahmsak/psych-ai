@@ -48,7 +48,8 @@ class _FakeBackend:
         self.segments_per_call = segments_per_call
 
     def __call__(self, path, model_size="small", language=None,
-                 device="cpu", compute_type="int8"):
+                 device="cpu", compute_type="int8", vad_filter=True,
+                 **kwargs):
         base = os.path.basename(path)
         if "__raise__" in base:
             raise RuntimeError("simulated transcription failure")

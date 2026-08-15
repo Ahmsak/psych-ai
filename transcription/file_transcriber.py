@@ -39,6 +39,7 @@ def transcribe_file(
     language: Optional[str] = None,
     device: str = "cpu",
     compute_type: str = "int8",
+    vad_filter: bool = True,
 ) -> List[dict]:
     """Transcribe a WAV file and keep per-segment timing.
 
@@ -80,7 +81,7 @@ def transcribe_file(
         audio,
         language=language,
         beam_size=1,
-        vad_filter=True,
+        vad_filter=vad_filter,
     )
     out: List[dict] = []
     for s in segments:

@@ -160,8 +160,12 @@ class Orchestrator:
                 any_err = True
                 continue
             try:
-                segs = transcribe_file(path, model_size=model,
-                                       language=language)
+                segs = transcribe_file(
+                    path,
+                    model_size=model,
+                    language=language,
+                    vad_filter=(src != "loopback"),
+                )
                 written = self._store.add_transcript_segments(
                     session_id=session_id,
                     audio_track_id=trk["id"],
