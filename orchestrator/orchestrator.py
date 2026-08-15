@@ -350,6 +350,51 @@ class Orchestrator:
     # reported honestly by the existing transcribe/build guards (a full
     # crash-recovery mechanism is a separate future task).
     # ------------------------------------------------------------------ #
+    def process_session(
+        self,
+        session_id: Optional[int] = None,
+        on_stage: Optional[callable] = None,
+    ) -> dict:
+        """Run transcription then dialogue-building for a completed session.
+
+        Intended to be called automatically after Stop. Thin composition of the
+        two existing operations; no recovery logic: a session left in a
+        transient/failed state stays as-is and is reported honestly by the
+        existing transcribe/build guards (a full crash-recovery mechanism is a
+        separate future task).
+
+        ``on_stage`` is an optional callback(str) invoked with the stage name
+        ("transcribing" / "building_dialogue") so a UI can reflect progress
+        without polling the DB. It is a pure hook: no business logic depends
+        on it.
+
+        Returns the final state dict from build_dialogue (or transcribe if
+        dialogue was skipped due to a non-transcribed result).
+        """
+        if session_id is None:
+            session_id = self.session.record_id
+        if session_id is None:
+            return self._dialogue_state(
+                session_id=None, status="no_session", utterances=0,
+                error="no session id available",
+            )
+
+        if self._store is None:
+            from db.session_store import SessionStore
+            self._store = SessionStore(self._db_path)
+
+        if on_stage is not None:
+            on_stage("transcribing")
+        transcribe_result = self.transcribe_session(session_id)
+        if transcribe_result.get("status") != "transcribed":
+            # Non-transcribed result (failed / partial / wrong state) — return
+            # it unchanged; do NOT mutate the session status.
+            return transcribe_result
+
+        if on_stage is not None:
+            on_stage("building_dialogue")
+        return self.build_dialogue(session_id)
+
     def _dialogue_state(
         self,
         *,

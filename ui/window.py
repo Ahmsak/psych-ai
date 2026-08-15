@@ -22,7 +22,7 @@ one; the new session is bound to that client. Sessions with no client
 ("Без клиента") remain visible after normal clients.
 """
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QTimer, QThread, Signal
 from PySide6.QtWidgets import (
     QMainWindow,
     QPushButton,
@@ -49,6 +49,38 @@ from ui.state import (
     session_row_text,
     state_text,
 )
+
+
+class ProcessingWorker(QThread):
+    """Runs Orchestrator.process_session off the GUI thread."""
+
+    started = Signal()
+    transcribing = Signal()
+    building_dialogue = Signal()
+    finished = Signal(dict)
+    error = Signal(str)
+
+    def __init__(self, orchestrator, session_id, parent=None):
+        super().__init__(parent)
+        self._orch = orchestrator
+        self._session_id = session_id
+
+    def run(self):
+        try:
+            self.started.emit()
+            result = self._orch.process_session(
+                self._session_id,
+                on_stage=self._emit_stage,
+            )
+            self.finished.emit(result)
+        except Exception as exc:  # surface, never crash the GUI thread
+            self.error.emit(str(exc))
+
+    def _emit_stage(self, stage: str):
+        if stage == "transcribing":
+            self.transcribing.emit()
+        elif stage == "building_dialogue":
+            self.building_dialogue.emit()
 
 
 class _ClientPickDialog(QDialog):
@@ -178,10 +210,29 @@ class MainWindow(QMainWindow):
         state = self.orchestrator.stop_recording()
         self.render(state)
         self.refresh_client_list()
+        session_id = state.get("session_id")
+        if session_id is not None and state.get("state") == "completed":
+            self._start_processing(session_id)
 
     # ------------------------------------------------------------------ #
     # Sprint 14: automatic post-stop processing (background)
     # ------------------------------------------------------------------ #
+    def _start_processing(self, session_id: int):
+        self.status.setText("Обработка… (транскрипция и Dialogue)")
+        self._worker = ProcessingWorker(self.orchestrator, session_id)
+        self._worker.started.connect(lambda: self.status.setText("Обработка…"))
+        self._worker.transcribing.connect(
+            lambda: self.status.setText("Транскрипция…"))
+        self._worker.building_dialogue.connect(
+            lambda: self.status.setText("Построение Dialogue…"))
+        self._worker.finished.connect(
+            lambda res: self._on_processing_finished(session_id, res))
+        self._worker.error.connect(
+            lambda err: self.status.setText(f"Ошибка обработки: {err}"))
+        self._worker.finished.connect(self._worker.deleteLater)
+        self._worker.error.connect(self._worker.deleteLater)
+        self._worker.start()
+
     def _on_processing_finished(self, session_id: int, result: dict):
         status = result.get("status")
         if status == "dialogued":
@@ -266,3 +317,12 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ #
     # Window lifecycle: never close mid-processing
     # ------------------------------------------------------------------ #
+    def closeEvent(self, event):
+        if self._worker is not None and self._worker.isRunning():
+            QMessageBox.information(
+                self, "Обработка не завершена",
+                "Идёт обработка сессии. Дождитесь завершения перед выходом.",
+            )
+            event.ignore()
+            return
+        event.accept()
