@@ -219,7 +219,7 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ #
     def _start_processing(self, session_id: int):
         self.status.setText("Обработка… (транскрипция и Dialogue)")
-        self._worker = ProcessingWorker(self.orchestrator, session_id)
+        self._worker = ProcessingWorker(self.orchestrator, session_id, parent=self)
         self._worker.started.connect(lambda: self.status.setText("Обработка…"))
         self._worker.transcribing.connect(
             lambda: self.status.setText("Транскрипция…"))
@@ -231,6 +231,8 @@ class MainWindow(QMainWindow):
             lambda err: self.status.setText(f"Ошибка обработки: {err}"))
         self._worker.finished.connect(self._worker.deleteLater)
         self._worker.error.connect(self._worker.deleteLater)
+        self._worker.finished.connect(self._clear_worker)
+        self._worker.error.connect(self._clear_worker)
         self._worker.start()
 
     def _on_processing_finished(self, session_id: int, result: dict):
@@ -244,6 +246,15 @@ class MainWindow(QMainWindow):
             self.status.setText(f"Обработка завершена: {status}")
         self.refresh_client_list()
         self._select_session(session_id)
+
+    def _clear_worker(self):
+        """Drop the Python reference to the (already deleteLater'd) worker.
+
+        Called only after the worker has finished/errored, never while the
+        thread is still running. Keeps ``self._worker`` from dangling on a
+        destroyed C++ object and lets ``closeEvent`` report a clean state.
+        """
+        self._worker = None
 
     # ------------------------------------------------------------------ #
     # Client / session viewer (read-only, two-level)
