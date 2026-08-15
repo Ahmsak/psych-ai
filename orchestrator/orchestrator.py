@@ -24,8 +24,11 @@ class Orchestrator:
     # translates failures into a state the UI can render. No business
     # logic, no PCM, no SQL.
     # ------------------------------------------------------------------ #
-    def start_recording(self) -> dict:
-        """Start a live recording session. Returns the new state."""
+    def start_recording(self, client_id: Optional[int] = None) -> dict:
+        """Start a live recording session. Returns the new state.
+
+        ``client_id`` optionally binds the new session to a Client (Sprint 16).
+        """
         if self.session.is_recording:
             return self._state(error="session is already recording")
 
@@ -53,7 +56,7 @@ class Orchestrator:
             if self._store is None:
                 self._store = SessionStore(self._db_path)
             self.session = Session()
-            self.session.start_recording(tracks, self._store)
+            self.session.start_recording(tracks, self._store, client_id=client_id)
         except Exception as exc:
             # Coordination duty: release whatever was created.
             for cap in (mic, loop):
@@ -287,12 +290,66 @@ class Orchestrator:
         return self._store.get_session(session_id)
 
     def get_dialogue(self, session_id: int) -> list[dict]:
-        """Return the built Dialogue of a session for the viewer."""
+        """Return the built Dialogue of a session for the viewer, or None."""
         if self._store is None:
             from db.session_store import SessionStore
             self._store = SessionStore(self._db_path)
         return self._store.get_dialogue(session_id)
 
+    # ------------------------------------------------------------------ #
+    # Sprint 16: client layer (grouping sessions by client). Thin delegates
+    # to the store port; the Orchestrator stays the single coordination
+    # point and the UI never imports db/SQLAlchemy directly.
+    # ------------------------------------------------------------------ #
+    def list_clients(self) -> list[dict]:
+        """List clients for the viewer UI."""
+        if self._store is None:
+            from db.session_store import SessionStore
+            self._store = SessionStore(self._db_path)
+        return self._store.list_clients()
+
+    def create_client(self, name: str) -> dict:
+        """Create a client with a stable global sequential number; return it."""
+        if self._store is None:
+            from db.session_store import SessionStore
+            self._store = SessionStore(self._db_path)
+        client = self._store.create_client(name)
+        return {
+            "id": int(client.id),
+            "display_name": client.display_name,
+            "client_number": client.client_number,
+        }
+
+    def get_client(self, client_id: int) -> Optional[dict]:
+        """Return one client as a plain dict, or None."""
+        if self._store is None:
+            from db.session_store import SessionStore
+            self._store = SessionStore(self._db_path)
+        from db.repositories import ClientRepository
+        with self._store._factory() as db:
+            c = ClientRepository(db).get(client_id)
+            if c is None:
+                return None
+            return {
+                "id": int(c.id),
+                "display_name": c.display_name,
+                "client_number": c.client_number,
+            }
+
+    def list_client_sessions(self, client_id: int) -> list[dict]:
+        """List sessions of one client (excludes others)."""
+        if self._store is None:
+            from db.session_store import SessionStore
+            self._store = SessionStore(self._db_path)
+        return self._store.list_client_sessions(client_id)
+
+    # ------------------------------------------------------------------ #
+    # Sprint 14: automatic post-stop processing (single entry point).
+    # Thin composition of transcribe_session + build_dialogue. No recovery
+    # logic: a session left in a transient/failed state stays as-is and is
+    # reported honestly by the existing transcribe/build guards (a full
+    # crash-recovery mechanism is a separate future task).
+    # ------------------------------------------------------------------ #
     def _dialogue_state(
         self,
         *,

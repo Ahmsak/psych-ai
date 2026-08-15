@@ -48,6 +48,7 @@ class Client(Base):
     created_at = Column(DateTime, default=_utcnow, nullable=False)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow, nullable=False)
     display_name = Column(String(255), nullable=True)
+    client_number = Column(Integer, nullable=True)  # stable global sequence (UI "Тест 001")
     notes = Column(Text, nullable=True)
 
     sessions = relationship("Session", back_populates="client")

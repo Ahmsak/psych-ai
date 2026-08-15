@@ -794,12 +794,12 @@ def test_F11_incompatible_old_schema_reports_error_no_data_loss(db_engine, tmp_p
 
 
 def test_F12_fresh_v2_engine_is_compatible(tmp_path):
-    """F12: a freshly created v2 DB passes is_schema_compatible and migrate is a no-op-ish."""
+    """F12: a freshly created schema passes is_schema_compatible and migrate is a no-op-ish."""
     from db.migrations import is_schema_compatible, migrate
 
     db_path = tmp_path / "fresh_v2.db"
     eng = get_engine(str(db_path))
-    init_db(eng)  # create v2 schema
+    init_db(eng)  # create current schema
     assert is_schema_compatible(eng) is True
-    # migrate must not raise and must report v2 (already compatible).
-    assert migrate(eng) == 2
+    # migrate must not raise and must report the current schema version.
+    assert migrate(eng) == SCHEMA_VERSION

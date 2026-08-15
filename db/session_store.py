@@ -17,6 +17,7 @@ from db.database import get_engine, get_session_factory, init_db
 from db.models import DialogueUtterance, TranscriptSegment
 from db.repositories import (
     AudioTrackRepository,
+    ClientRepository,
     DialogueRepository,
     SessionRepository,
     TranscriptRepository,
@@ -41,10 +42,11 @@ class SessionStore:
     # ------------------------------------------------------------------ #
     # Port: recording lifecycle (three methods) + post-stop transcription
     # ------------------------------------------------------------------ #
-    def create_session(self, *, started_at: datetime) -> int:
+    def create_session(self, *, started_at: datetime, client_id: Optional[int] = None) -> int:
         """Insert a session row in the ``recording`` state; return its id."""
         with self._factory() as db:
             row = SessionRepository(db).create(
+                client_id=client_id,
                 source_session_id=uuid.uuid4().hex[:12],
                 source="live",
                 status="recording",
@@ -235,14 +237,64 @@ class SessionStore:
             return written
 
     # ------------------------------------------------------------------ #
+    # Port: client layer (grouping sessions by client)
+    # ------------------------------------------------------------------ #
+    def create_client(self, name: str) -> object:
+        """Create a client with a stable global sequential number; return ORM obj."""
+        with self._factory() as db:
+            client = ClientRepository(db).create_client(name)
+            db.commit()
+            return client
+
+    def list_clients(self) -> list[dict]:
+        """Return all clients as plain dicts (no ORM objects leak out).
+
+        Each dict: id, display_name, client_number. Ordered by client_number
+        (NULLs last). The UI renders "Тест 001" from display_name +
+        client_number.
+        """
+        with self._factory() as db:
+            rows = ClientRepository(db).list_clients()
+            return [
+                {
+                    "id": int(c.id),
+                    "display_name": c.display_name,
+                    "client_number": c.client_number,
+                }
+                for c in rows
+            ]
+
+    def list_client_sessions(self, client_id: int) -> list[dict]:
+        """Return sessions of one client as plain dicts (excludes others)."""
+        with self._factory() as db:
+            rows = SessionRepository(db).list_all()
+            out = []
+            for r in rows:
+                if r.client_id is None or int(r.client_id) != int(client_id):
+                    continue
+                out.append(
+                    {
+                        "id": int(r.id),
+                        "client_id": int(r.client_id) if r.client_id is not None else None,
+                        "source_session_id": r.source_session_id,
+                        "source": r.source,
+                        "status": r.status,
+                        "started_at": _naive(r.started_at),
+                        "ended_at": _naive(r.ended_at),
+                    }
+                )
+            return out
+
+    # ------------------------------------------------------------------ #
     # Port: session viewer (read-only listing of completed sessions)
     # ------------------------------------------------------------------ #
     def list_sessions(self) -> list[dict]:
         """Return all sessions as plain dicts (no ORM objects leak out).
 
         Each dict: id, source_session_id, source, status, started_at,
-        ended_at. Ordered by id. The UI renders these without ever touching
-        SQLAlchemy.
+        ended_at, client_id, client_name, client_number. Ordered by id. The
+        UI renders these without ever touching SQLAlchemy. Sessions with
+        client_id NULL surface under a "Без клиента" group in the viewer.
         """
         with self._factory() as db:
             rows = SessionRepository(db).list_all()
@@ -254,6 +306,9 @@ class SessionStore:
                     "status": r.status,
                     "started_at": _naive(r.started_at),
                     "ended_at": _naive(r.ended_at),
+                    "client_id": int(r.client_id) if r.client_id is not None else None,
+                    "client_name": r.client.display_name if r.client is not None else None,
+                    "client_number": r.client.client_number if r.client is not None else None,
                 }
                 for r in rows
             ]
@@ -276,6 +331,9 @@ class SessionStore:
                 "status": row.status,
                 "started_at": _naive(row.started_at),
                 "ended_at": _naive(row.ended_at),
+                "client_id": int(row.client_id) if row.client_id is not None else None,
+                "client_name": row.client.display_name if row.client is not None else None,
+                "client_number": row.client.client_number if row.client is not None else None,
                 "audio_tracks": [
                     {
                         "source": t.source,

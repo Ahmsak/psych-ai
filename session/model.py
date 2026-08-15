@@ -123,7 +123,7 @@ class Session:
         end = self.ended_at or _utcnow()
         return max(0.0, (end - self.started_at).total_seconds())
 
-    def start_recording(self, tracks: List[Any], store: Any) -> None:
+    def start_recording(self, tracks: List[Any], store: Any, client_id: Optional[int] = None) -> None:
         """Start ``tracks`` and register the session in ``store``.
 
         On any capture failure every started track is stopped again and
@@ -156,7 +156,8 @@ class Session:
         self.state = RECORDING
         self.active = True
         self.error = None
-        self.record_id = store.create_session(started_at=self.started_at)
+        self.record_id = store.create_session(
+            started_at=self.started_at, client_id=client_id)
 
     def stop_recording(self) -> Optional[int]:
         """Stop capture, persist the tracks and finalize the session.

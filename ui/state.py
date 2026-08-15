@@ -120,9 +120,63 @@ def dialogue_text(utterances: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def client_label(client: dict) -> str:
+    """Render a client as 'Тест 001' from display_name + client_number.
+
+    ``display_name`` stores the base name only; ``client_number`` is the
+    stable global visual id. Falls back to 'Клиент N' if name missing.
+    """
+    number = client.get("client_number")
+    name = (client.get("display_name") or "").strip()
+    if number is None:
+        return name or "Без имени"
+    if not name:
+        return f"Клиент {number:03d}"
+    return f"{name} {number:03d}"
+
+
+def client_session_groups(sessions: list[dict]) -> list[dict]:
+    """Group sessions by client for the viewer.
+
+    Returns a list of groups in display order:
+      - normal clients (by client_number, None-last), each with their sessions;
+      - a trailing "Без клиента" group for sessions with client_id NULL.
+    Each group: {"label", "client_id" (int or None), "sessions": [session dicts]}.
+    """
+    normal: dict[int, dict] = {}
+    legacy_sessions: list[dict] = []
+    for s in sessions:
+        cid = s.get("client_id")
+        if cid is None:
+            legacy_sessions.append(s)
+            continue
+        grp = normal.setdefault(cid, {
+            "client_id": cid,
+            "display_name": s.get("client_name"),
+            "client_number": s.get("client_number"),
+            "sessions": [],
+        })
+        grp["sessions"].append(s)
+
+    groups = []
+    for cid in sorted(normal.keys(), key=lambda k: (normal[k]["client_number"] is None, normal[k]["client_number"] or 0, cid)):
+        g = normal[cid]
+        g["label"] = client_label(g)
+        groups.append(g)
+    if legacy_sessions:
+        groups.append({
+            "label": "Без клиента",
+            "client_id": None,
+            "sessions": legacy_sessions,
+        })
+    return groups
+
+
 __all__ = [
     "SPEAKER_LABEL",
     "button_text",
+    "client_label",
+    "client_session_groups",
     "dialogue_text",
     "format_elapsed",
     "session_detail_text",

@@ -90,9 +90,17 @@ def migrate(engine: Engine) -> int:
     ``python -m db.cli init`` after moving the old file aside). This function never
     drops or recreates tables.
 
+    The Sprint 16 addition of ``clients.client_number`` (a new nullable column on an
+    existing table) is applied here with a safe ADD COLUMN when missing — SQLite
+    permits this without table rebuild, and existing rows simply get NULL.
+
     Raises ``SchemaMigrationError`` if the on-disk schema is an incompatible older
     version that cannot be migrated in place.
     """
+    # Sprint 16: ensure the new client_number column exists on existing tables.
+    _ensure_column(engine, "clients", "client_number",
+                   "ALTER TABLE clients ADD COLUMN client_number INTEGER")
+
     if is_schema_compatible(engine):
         # Already has the correct FK policy; bring the version marker up to date
         # only if it is missing/lower (does NOT touch data or constraints).
@@ -110,7 +118,7 @@ def migrate(engine: Engine) -> int:
                     {
                         "v": SCHEMA_VERSION,
                         "t": datetime.now(timezone.utc),
-                        "d": "in-place compatible (FK policy already matches v2)",
+                        "d": "Sprint 16: add clients.client_number (global sequence)",
                     },
                 )
         return SCHEMA_VERSION
@@ -127,6 +135,17 @@ def migrate(engine: Engine) -> int:
         "  4) re-import experiments (`python -m db.cli import <dir>`).\n"
         "No user data is deleted by this tool."
     )
+
+
+def _ensure_column(engine: Engine, table: str, column: str, ddl: str) -> None:
+    """Add ``column`` to ``table`` if it is absent (safe SQLite ADD COLUMN)."""
+    from sqlalchemy import inspect, text
+
+    cols = {c["name"] for c in inspect(engine).get_columns(table)}
+    if column in cols:
+        return
+    with engine.begin() as conn:
+        conn.execute(text(ddl))
 
 
 __all__ = [

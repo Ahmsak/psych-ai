@@ -58,6 +58,40 @@ class ClientRepository:
         self._s.flush()
         return client
 
+    def create_client(self, name: str) -> Client:
+        """Create a client with a stable GLOBAL sequential number.
+
+        ``display_name`` stores the base name only (e.g. "Тест"); the visual
+        id "Тест 001" is rendered in the UI from ``client_number``. The number
+        is global (not per-name) and never reused, even if a client is later
+        deleted. Name is NOT a unique key — two clients may share a base name
+        with different numbers.
+        """
+        name = (name or "").strip() or None
+        # Global sequence: max existing client_number + 1 (starts at 1).
+        from sqlalchemy import func, select as _select
+        max_no = self._s.execute(
+            _select(func.max(Client.client_number))
+        ).scalar()
+        next_no = 1 if max_no is None else int(max_no) + 1
+        client = Client(display_name=name, client_number=next_no)
+        self._s.add(client)
+        self._s.flush()
+        return client
+
+    def list_clients(self) -> list[Client]:
+        """All clients ordered by stable client_number (then id)."""
+        from sqlalchemy import select as _select
+        return list(
+            self._s.execute(
+                _select(Client).order_by(
+                    Client.client_number.is_(None),
+                    Client.client_number,
+                    Client.id,
+                )
+            ).scalars()
+        )
+
     def get(self, client_id: int) -> Optional[Client]:
         return self._s.get(Client, client_id)
 

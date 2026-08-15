@@ -7,6 +7,19 @@ only triggers a repaint, it does not measure anything.
 
 Sprint 13: a read-only Session Viewer. A list of sessions on the left;
 selecting one shows its details and the built Dialogue (no editing).
+
+Sprint 14: after Stop, post-stop processing (transcribe -> dialogue) runs
+automatically in a background QThread so the GUI never blocks on Whisper.
+The window refuses to close while processing is in flight (closing mid-run
+would interrupt an unsafe synchronous call); WAV/DB stay consistent and a
+re-run is idempotent. Stage signals let the user see progress (transcribing
+-> building_dialogue) without polling the DB; no percentages (per scope).
+
+Sprint 16: Client layer. The viewer is two-level: a client list (Тест 001…)
+on top, the selected client's sessions below, and details/Dialogue on the
+right. Before recording, the user picks an existing client or creates a new
+one; the new session is bound to that client. Sessions with no client
+("Без клиента") remain visible after normal clients.
 """
 
 from PySide6.QtCore import QTimer
@@ -19,10 +32,18 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QWidget,
+    QMessageBox,
+    QInputDialog,
+    QComboBox,
+    QDialog,
+    QFormLayout,
+    QLineEdit,
 )
 
 from ui.state import (
     button_text,
+    client_label,
+    client_session_groups,
     dialogue_text,
     session_detail_text,
     session_row_text,
@@ -30,15 +51,63 @@ from ui.state import (
 )
 
 
+class _ClientPickDialog(QDialog):
+    """Modal picker: choose an existing client or create a new one."""
+
+    def __init__(self, orchestrator, parent=None):
+        super().__init__(parent)
+        self._orch = orchestrator
+        self.selected_client_id = None
+        self.setWindowTitle("Выберите клиента")
+        self.resize(360, 160)
+
+        self.combo = QComboBox(self)
+        self._refresh_clients()
+
+        self.new_name = QLineEdit(self)
+        self.new_name.setPlaceholderText("Новый клиент: имя (напр. Тест)")
+
+        self.ok_btn = QPushButton("Начать запись", self)
+        self.ok_btn.clicked.connect(self.accept)
+        self.cancel_btn = QPushButton("Отмена", self)
+        self.cancel_btn.clicked.connect(self.reject)
+
+        layout = QFormLayout(self)
+        layout.addRow("Клиент:", self.combo)
+        layout.addRow("Или новый:", self.new_name)
+        row = QHBoxLayout()
+        row.addWidget(self.ok_btn)
+        row.addWidget(self.cancel_btn)
+        layout.addRow(row)
+
+    def _refresh_clients(self):
+        self.combo.clear()
+        self.combo.addItem("— выбрать существующего —", None)
+        for c in self._orch.list_clients():
+            self.combo.addItem(client_label(c), c["id"])
+
+    def accept(self):
+        name = (self.new_name.text() or "").strip()
+        if name:
+            client = self._orch.create_client(name)
+            self.selected_client_id = client["id"]
+        else:
+            self.selected_client_id = self.combo.currentData()
+        super().accept()
+
+
 class MainWindow(QMainWindow):
     def __init__(self, orchestrator):
         super().__init__()
         self.orchestrator = orchestrator
+        self._worker = None  # type: ignore[var-annotated]
+        self._selected_client_id = None  # type: ignore[var-annotated]
+        self._session_ids = []  # type: ignore[var-annotated]
 
         self.setWindowTitle("Psych AI")
         self.resize(900, 600)
 
-        # --- Recording control (unchanged behaviour) ---
+        # --- Recording control (unchanged behaviour) --- #
         self.button = QPushButton("Начать запись", self)
         self.button.clicked.connect(self.toggle_recording)
         self.status = QLabel("Готов к записи", self)
@@ -48,7 +117,9 @@ class MainWindow(QMainWindow):
         self._timer.setInterval(1000)
         self._timer.timeout.connect(self.refresh)
 
-        # --- Sprint 13: session viewer (read-only) ---
+        # --- Sprint 16: client -> session -> detail viewer --- #
+        self.client_list = QListWidget(self)
+        self.client_list.currentItemChanged.connect(self.on_client_selected)
         self.session_list = QListWidget(self)
         self.session_list.currentItemChanged.connect(self.on_session_selected)
         self.session_detail = QLabel("Выберите сессию", self)
@@ -56,10 +127,11 @@ class MainWindow(QMainWindow):
         self.dialogue_view = QTextEdit(self)
         self.dialogue_view.setReadOnly(True)
 
-        # Layout
         left = QVBoxLayout()
+        left.addWidget(QLabel("Клиенты"))
+        left.addWidget(self.client_list, 1)
         left.addWidget(QLabel("Сессии"))
-        left.addWidget(self.session_list, 1)
+        left.addWidget(self.session_list, 2)
 
         right = QVBoxLayout()
         right.addWidget(QLabel("Детали сессии"))
@@ -80,11 +152,10 @@ class MainWindow(QMainWindow):
         container.setLayout(main)
         self.setCentralWidget(container)
 
-        # Initial load of the session list.
-        self.refresh_session_list()
+        self.refresh_client_list()
 
     # ------------------------------------------------------------------ #
-    # Commands (recording) — unchanged
+    # Commands (recording)
     # ------------------------------------------------------------------ #
     def toggle_recording(self):
         if self.orchestrator.session_state().get("is_recording"):
@@ -93,25 +164,73 @@ class MainWindow(QMainWindow):
             self.start_recording()
 
     def start_recording(self):
-        state = self.orchestrator.start_recording()
+        dlg = _ClientPickDialog(self.orchestrator, self)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        client_id = dlg.selected_client_id
+        state = self.orchestrator.start_recording(client_id=client_id)
         self.render(state)
         if state.get("is_recording"):
             self._timer.start()
 
     def stop_recording(self):
         self._timer.stop()
-        self.render(self.orchestrator.stop_recording())
-        # A new session may now exist — refresh the viewer list.
-        self.refresh_session_list()
+        state = self.orchestrator.stop_recording()
+        self.render(state)
+        self.refresh_client_list()
 
     # ------------------------------------------------------------------ #
-    # Session viewer (read-only)
+    # Sprint 14: automatic post-stop processing (background)
     # ------------------------------------------------------------------ #
-    def refresh_session_list(self):
+    def _on_processing_finished(self, session_id: int, result: dict):
+        status = result.get("status")
+        if status == "dialogued":
+            self.status.setText("Готово: Dialogue построен")
+        elif status in ("transcription_failed", "dialogue_failed",
+                        "transcribed_partial"):
+            self.status.setText(f"Обработка завершена с ошибкой: {status}")
+        else:
+            self.status.setText(f"Обработка завершена: {status}")
+        self.refresh_client_list()
+        self._select_session(session_id)
+
+    # ------------------------------------------------------------------ #
+    # Client / session viewer (read-only, two-level)
+    # ------------------------------------------------------------------ #
+    def refresh_client_list(self):
+        self.client_list.blockSignals(True)
+        self.client_list.clear()
+        self._client_ids = []
+        sessions = self.orchestrator.list_sessions()
+        for grp in client_session_groups(sessions):
+            self._client_ids.append(grp["client_id"])
+            self.client_list.addItem(grp["label"])
+        self.client_list.blockSignals(False)
+        # Keep current selection if still valid.
+        if self._selected_client_id is not None:
+            self._show_client_sessions(self._selected_client_id)
+        else:
+            self.session_list.clear()
+
+    def on_client_selected(self, current, _previous):
+        if current is None:
+            return
+        idx = self.client_list.row(current)
+        if idx < 0 or idx >= len(self._client_ids):
+            return
+        self._selected_client_id = self._client_ids[idx]
+        self._show_client_sessions(self._selected_client_id)
+
+    def _show_client_sessions(self, client_id):
         self.session_list.blockSignals(True)
         self.session_list.clear()
         self._session_ids = []
-        for s in self.orchestrator.list_sessions():
+        if client_id is None:
+            sessions = [s for s in self.orchestrator.list_sessions()
+                        if s.get("client_id") is None]
+        else:
+            sessions = self.orchestrator.list_client_sessions(client_id)
+        for s in sessions:
             self._session_ids.append(s["id"])
             self.session_list.addItem(session_row_text(s))
         self.session_list.blockSignals(False)
@@ -122,7 +241,9 @@ class MainWindow(QMainWindow):
         idx = self.session_list.row(current)
         if idx < 0 or idx >= len(self._session_ids):
             return
-        session_id = self._session_ids[idx]
+        self._select_session(self._session_ids[idx])
+
+    def _select_session(self, session_id: int):
         session = self.orchestrator.get_session(session_id)
         if session is None:
             self.session_detail.setText(f"Сессия {session_id} не найдена")
@@ -141,3 +262,7 @@ class MainWindow(QMainWindow):
     def render(self, state: dict):
         self.status.setText(state_text(state))
         self.button.setText(button_text(state))
+
+    # ------------------------------------------------------------------ #
+    # Window lifecycle: never close mid-processing
+    # ------------------------------------------------------------------ #
