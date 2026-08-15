@@ -16,6 +16,7 @@ from typing import Optional
 from db.database import get_engine, get_session_factory, init_db
 from db.models import DialogueUtterance, TranscriptSegment
 from db.repositories import (
+    AnalysisRepository,
     AudioTrackRepository,
     ClientRepository,
     DialogueRepository,
@@ -364,6 +365,61 @@ class SessionStore:
                 }
                 for u in rows
             ]
+
+    # ------------------------------------------------------------------ #
+    # Port: LLM analysis (Sprint 17). Write/read the supervisor Analysis.
+    # ------------------------------------------------------------------ #
+    def save_analysis(
+        self,
+        *,
+        session_id: int,
+        provider: str,
+        model: str,
+        prompt_version: str,
+        text: str,
+        analysis_type: str = "supervisor",
+        metadata: Optional[dict] = None,
+    ) -> int:
+        """Persist one Analysis result and return its new row id.
+
+        A repeat analysis for the same session creates a NEW row (history is
+        preserved). ``get_analysis`` returns the latest. No ORM objects leak
+        out; the API key is never stored here.
+        """
+        with self._factory() as db:
+            row = AnalysisRepository(db).create(
+                session_id=session_id,
+                type=analysis_type,
+                provider=provider,
+                model=model,
+                prompt_version=prompt_version,
+                status="completed",
+                text=text,
+                metadata=metadata,
+            )
+            db.commit()
+            return int(row.id)
+
+    def get_analysis(self, session_id: int) -> Optional[dict]:
+        """Return the LATEST Analysis of a session as a plain dict, or None.
+
+        Dict keys: id, session_id, provider, model, prompt_version, text,
+        created_at. History is preserved in the table; this returns only the
+        most recent. No ORM objects escape the port.
+        """
+        with self._factory() as db:
+            row = AnalysisRepository(db).latest_by_session(session_id)
+            if row is None:
+                return None
+            return {
+                "id": int(row.id),
+                "session_id": int(row.session_id),
+                "provider": row.provider,
+                "model": row.model,
+                "prompt_version": row.prompt_version,
+                "text": row.text,
+                "created_at": _naive(row.created_at),
+            }
 
 
 def _naive(value: Optional[datetime]) -> Optional[datetime]:

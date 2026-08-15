@@ -322,16 +322,22 @@ class AnalysisRepository:
         *,
         session_id: int,
         type: str,
+        provider: Optional[str] = None,
         model: Optional[str] = None,
+        prompt_version: Optional[str] = None,
         status: str = "pending",
+        text: Optional[str] = None,
         result: Optional[dict] = None,
         metadata: Optional[dict] = None,
     ) -> Analysis:
         a = Analysis(
             session_id=session_id,
             type=type,
+            provider=provider,
             model=model,
+            prompt_version=prompt_version,
             status=status,
+            text=text,
             result_json=_dump(result),
             metadata_json=_dump(metadata),
         )
@@ -342,6 +348,18 @@ class AnalysisRepository:
     def get_by_session(self, session_id: int) -> list[Analysis]:
         stmt = select(Analysis).where(Analysis.session_id == session_id)
         return list(self._s.execute(stmt).scalars())
+
+    def latest_by_session(self, session_id: int) -> Optional[Analysis]:
+        """The most recently created Analysis for a session, or None."""
+        from sqlalchemy import desc
+
+        stmt = (
+            select(Analysis)
+            .where(Analysis.session_id == session_id)
+            .order_by(desc(Analysis.created_at), desc(Analysis.id))
+            .limit(1)
+        )
+        return self._s.execute(stmt).scalar_one_or_none()
 
 
 __all__ = [

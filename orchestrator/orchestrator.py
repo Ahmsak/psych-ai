@@ -344,6 +344,113 @@ class Orchestrator:
         return self._store.list_client_sessions(client_id)
 
     # ------------------------------------------------------------------ #
+    # Sprint 17: LLM analysis vertical slice (delegates to the store port).
+    # ------------------------------------------------------------------ #
+    def get_analysis(self, session_id: int) -> Optional[dict]:
+        """Return the latest Analysis of a session, or None (read-only)."""
+        if self._store is None:
+            from db.session_store import SessionStore
+            self._store = SessionStore(self._db_path)
+        return self._store.get_analysis(session_id)
+
+    def analyze_session(
+        self,
+        session_id: Optional[int] = None,
+        prompt_version: Optional[str] = None,
+    ) -> dict:
+        """Run the supervisor analysis for a session and persist the result.
+
+        Args:
+            session_id: target session id. Defaults to the current session.
+            prompt_version: override the prompt version (default PROMPT_VERSION).
+
+        Returns a state dict:
+            {"session_id", "status", "provider", "model",
+             "prompt_version", "created_at", "text", "error"}
+        where ``status`` is one of: "analyzed", "no_transcript", "error".
+        """
+        if session_id is None:
+            session_id = self.session.record_id
+        if session_id is None:
+            return self._analysis_state(
+                session_id=None, status="no_session",
+                error="no session id available")
+        if self._store is None:
+            from db.session_store import SessionStore
+            self._store = SessionStore(self._db_path)
+
+        from llm.transcript_format import format_raw_transcript
+        from llm.prompt import PROMPT_VERSION, build_analysis_prompt
+
+        # RAW transcript is the sole source of truth (not Dialogue).
+        segments = self._store.get_transcript_segments(session_id)
+        raw_text = format_raw_transcript(segments)
+        if not raw_text.strip():
+            return self._analysis_state(
+                session_id=session_id, status="no_transcript",
+                error="session has no RAW transcript to analyze")
+
+        prompt = build_analysis_prompt(raw_text)
+        pv = prompt_version or PROMPT_VERSION
+
+        try:
+            from llm.config import load_llm_config
+            from llm.contract import AnalysisRequest
+            from llm.provider_factory import get_provider
+
+            config = load_llm_config()
+            provider = get_provider(config)
+            request = AnalysisRequest(
+                prompt=prompt, model=config.model, prompt_version=pv)
+            result = provider.analyze(request)
+        except Exception as exc:
+            return self._analysis_state(
+                session_id=session_id, status="error", error=str(exc))
+
+        row_id = self._store.save_analysis(
+            session_id=session_id,
+            provider=result.provider,
+            model=result.model,
+            prompt_version=result.prompt_version,
+            text=result.text,
+        )
+        return self._analysis_state(
+            session_id=session_id,
+            status="analyzed",
+            provider=result.provider,
+            model=result.model,
+            prompt_version=result.prompt_version,
+            created_at=result.created_at,
+            text=result.text,
+            analysis_id=row_id,
+        )
+
+    def _analysis_state(
+        self,
+        *,
+        session_id: Optional[int],
+        status: Optional[str],
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        prompt_version: Optional[str] = None,
+        created_at=None,
+        text: Optional[str] = None,
+        analysis_id: Optional[int] = None,
+        error: Optional[str] = None,
+    ) -> dict:
+        return {
+            "session_id": session_id,
+            "status": status,
+            "provider": provider,
+            "model": model,
+            "prompt_version": prompt_version,
+            "created_at": created_at,
+            "text": text,
+            "analysis_id": analysis_id,
+            "error": error,
+        }
+
+    # ------------------------------------------------------------------ #
     # Sprint 14: automatic post-stop processing (single entry point).
     # Thin composition of transcribe_session + build_dialogue. No recovery
     # logic: a session left in a transient/failed state stays as-is and is

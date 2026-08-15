@@ -101,6 +101,18 @@ def migrate(engine: Engine) -> int:
     _ensure_column(engine, "clients", "client_number",
                    "ALTER TABLE clients ADD COLUMN client_number INTEGER")
 
+    # Sprint 17: ensure the analysis provenance columns exist on existing DBs.
+    # Safe ADD COLUMN (no table rebuild, existing rows get NULL). The
+    # existing v3 FK policy (analyses->sessions CASCADE) is untouched, so
+    # is_schema_compatible() stays True and migrate() only fills columns
+    # + stamps the version marker — never drops or rewrites user data.
+    _ensure_column(engine, "analyses", "provider",
+                   "ALTER TABLE analyses ADD COLUMN provider VARCHAR(64)")
+    _ensure_column(engine, "analyses", "prompt_version",
+                   "ALTER TABLE analyses ADD COLUMN prompt_version VARCHAR(32)")
+    _ensure_column(engine, "analyses", "text",
+                   "ALTER TABLE analyses ADD COLUMN text TEXT")
+
     if is_schema_compatible(engine):
         # Already has the correct FK policy; bring the version marker up to date
         # only if it is missing/lower (does NOT touch data or constraints).
@@ -118,7 +130,8 @@ def migrate(engine: Engine) -> int:
                     {
                         "v": SCHEMA_VERSION,
                         "t": datetime.now(timezone.utc),
-                        "d": "Sprint 16: add clients.client_number (global sequence)",
+                        "d": "Sprint 17: add analyses.provider/prompt_version/text "
+                             "(analysis provenance + text)",
                     },
                 )
         return SCHEMA_VERSION

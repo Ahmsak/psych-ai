@@ -135,6 +135,37 @@ def client_label(client: dict) -> str:
     return f"{name} {number:03d}"
 
 
+def analysis_status_text(state: dict) -> str:
+    """Human-readable status for an analysis state dict from the Orchestrator.
+
+    States: analyzing (UI sets this before the background call),
+    analyzed, no_transcript, no_session, error.
+    """
+    status = state.get("status")
+    if status == "analyzed":
+        prov = state.get("provider")
+        model = state.get("model")
+        pv = state.get("prompt_version")
+        meta = " ".join(p for p in (prov, model, pv) if p)
+        return f"Анализ готов ({meta})" if meta else "Анализ готов"
+    if status == "no_transcript":
+        return "Нет RAW-транскрипта для анализа"
+    if status == "no_session":
+        return "Нет выбранной сессии"
+    if status == "error":
+        err = state.get("error") or "неизвестная ошибка"
+        return f"Ошибка анализа: {err}"
+    # "analyzing" or any other in-flight marker
+    return "Анализ…"
+
+
+def analysis_text(result: dict) -> str:
+    """Render a completed analysis result dict (or empty placeholder)."""
+    if not result or not (result.get("text") or "").strip():
+        return "Результат анализа пуст"
+    return result.get("text")
+
+
 def client_session_groups(sessions: list[dict]) -> list[dict]:
     """Group sessions by client for the viewer.
 
@@ -182,4 +213,6 @@ __all__ = [
     "session_detail_text",
     "session_row_text",
     "state_text",
+    "analysis_status_text",
+    "analysis_text",
 ]

@@ -22,6 +22,8 @@ one; the new session is bound to that client. Sessions with no client
 ("Без клиента") remain visible after normal clients.
 """
 
+from __future__ import annotations
+
 from PySide6.QtCore import QTimer, QThread, Signal
 from PySide6.QtWidgets import (
     QMainWindow,
@@ -41,6 +43,8 @@ from PySide6.QtWidgets import (
 )
 
 from ui.state import (
+    analysis_status_text,
+    analysis_text,
     button_text,
     client_label,
     client_session_groups,
@@ -81,6 +85,33 @@ class ProcessingWorker(QThread):
             self.transcribing.emit()
         elif stage == "building_dialogue":
             self.building_dialogue.emit()
+
+
+class AnalysisWorker(QThread):
+    """Runs Orchestrator.analyze_session off the GUI thread.
+
+    Keeps the UI responsive during the (network-bound) LLM call; no
+    streaming, no chat — we wait for the full AnalysisResult, then hand it
+    back. Mirrors the ProcessingWorker pattern so window lifecycle stays
+    predictable.
+    """
+
+    analyzing = Signal()
+    finished = Signal(dict)
+    error = Signal(str)
+
+    def __init__(self, orchestrator, session_id, parent=None):
+        super().__init__(parent)
+        self._orch = orchestrator
+        self._session_id = session_id
+
+    def run(self):
+        try:
+            self.analyzing.emit()
+            result = self._orch.analyze_session(self._session_id)
+            self.finished.emit(result)
+        except Exception as exc:  # surface, never crash the GUI thread
+            self.error.emit(str(exc))
 
 
 class _ClientPickDialog(QDialog):
@@ -133,6 +164,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.orchestrator = orchestrator
         self._worker = None  # type: ignore[var-annotated]
+        self._analysis_worker = None  # type: ignore[var-annotated]
         self._selected_client_id = None  # type: ignore[var-annotated]
         self._session_ids = []  # type: ignore[var-annotated]
 
@@ -159,6 +191,14 @@ class MainWindow(QMainWindow):
         self.dialogue_view = QTextEdit(self)
         self.dialogue_view.setReadOnly(True)
 
+        # --- Sprint 17: AI-analysis (read-only supervisor output) --- #
+        self.analyze_button = QPushButton("AI-анализ", self)
+        self.analyze_button.setEnabled(False)
+        self.analyze_button.clicked.connect(self.on_analyze_clicked)
+        self.analysis_status = QLabel("Анализ не выполнялся", self)
+        self.analysis_view = QTextEdit(self)
+        self.analysis_view.setReadOnly(True)
+
         left = QVBoxLayout()
         left.addWidget(QLabel("Клиенты"))
         left.addWidget(self.client_list, 1)
@@ -170,6 +210,10 @@ class MainWindow(QMainWindow):
         right.addWidget(self.session_detail)
         right.addWidget(QLabel("Dialogue"))
         right.addWidget(self.dialogue_view, 2)
+        right.addWidget(self.analyze_button)
+        right.addWidget(self.analysis_status)
+        right.addWidget(QLabel("AI-анализ (супервизор)"))
+        right.addWidget(self.analysis_view, 3)
 
         lists = QHBoxLayout()
         lists.addLayout(left, 1)
@@ -310,10 +354,72 @@ class MainWindow(QMainWindow):
         if session is None:
             self.session_detail.setText(f"Сессия {session_id} не найдена")
             self.dialogue_view.setPlainText("")
+            self.analyze_button.setEnabled(False)
+            self.analysis_view.setPlainText("")
+            self.analysis_status.setText("Анализ не выполнялся")
             return
         self.session_detail.setText(session_detail_text(session))
         utterances = self.orchestrator.get_dialogue(session_id)
         self.dialogue_view.setPlainText(dialogue_text(utterances))
+        # Sprint 17: allow analysis and show the latest stored result.
+        self.analyze_button.setEnabled(True)
+        self.analyze_button.setProperty("session_id", session_id)
+        analysis = self.orchestrator.get_analysis(session_id)
+        self._render_analysis(analysis)
+
+    # ------------------------------------------------------------------ #
+    # Sprint 17: AI-analysis (background worker, no GUI blocking, no streaming)
+    # ------------------------------------------------------------------ #
+    def on_analyze_clicked(self):
+        sid = self.analyze_button.property("session_id")
+        if sid is None:
+            return
+        self.analyze_button.setEnabled(False)
+        self.analysis_status.setText("Анализ…")
+        self._analysis_worker = AnalysisWorker(self.orchestrator, sid, parent=self)
+        self._analysis_worker.analyzing.connect(
+            lambda: self.analysis_status.setText("Анализ…"))
+        self._analysis_worker.finished.connect(
+            lambda res: self._on_analysis_finished(sid, res))
+        self._analysis_worker.error.connect(
+            lambda err: self._on_analysis_error(err))
+        self._analysis_worker.finished.connect(self._analysis_worker.deleteLater)
+        self._analysis_worker.error.connect(self._analysis_worker.deleteLater)
+        self._analysis_worker.finished.connect(self._clear_analysis_worker)
+        self._analysis_worker.error.connect(self._clear_analysis_worker)
+        self._analysis_worker.start()
+
+    def _on_analysis_finished(self, session_id: int, result: dict):
+        self.analysis_status.setText(analysis_status_text(result))
+        self._render_analysis(result)
+        self.analyze_button.setEnabled(True)
+
+    def _on_analysis_error(self, err: str):
+        self.analysis_status.setText(f"Ошибка анализа: {err}")
+        self.analyze_button.setEnabled(True)
+
+    def _render_analysis(self, result: Optional[dict]) -> None:
+        """Render a stored/returned analysis result dict, or a placeholder.
+
+        Guards against non-dict values (e.g. a mock) so a malformed/empty
+        result never crashes the GUI thread.
+        """
+        if not isinstance(result, dict):
+            self.analysis_view.setPlainText("")
+            return
+        status = result.get("status")
+        if status == "analyzed":
+            self.analysis_view.setPlainText(analysis_text(result))
+        elif status == "no_transcript":
+            self.analysis_view.setPlainText("Нет RAW-транскрипта для анализа")
+        elif status == "error":
+            self.analysis_view.setPlainText(
+                f"Ошибка анализа: {result.get('error') or ''}")
+        else:
+            self.analysis_view.setPlainText(analysis_text(result))
+
+    def _clear_analysis_worker(self):
+        self._analysis_worker = None
 
     # ------------------------------------------------------------------ #
     # Recording render

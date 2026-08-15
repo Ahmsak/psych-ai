@@ -209,15 +209,25 @@ class DialogueUtterance(Base):
 
 
 class Analysis(Base):
-    """Analysis result for a session (LLM output, summaries, etc.)."""
+    """Analysis result for a session (LLM output, summaries, etc.).
+
+    Sprint 17 added ``provider``, ``prompt_version`` and ``text`` so the
+    supervisor-analysis vertical slice can persist the exact provenance
+    (which provider/model/prompt produced it) and the full analysis text
+    in a dedicated column. ``type``/``result_json`` are retained for future
+    structured output; for v0.1 the prose lives in ``text``.
+    """
 
     __tablename__ = "analyses"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     session_id = Column(Integer, ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
-    type = Column(String(64), nullable=False)  # summary | hypotheses | ...
+    type = Column(String(64), nullable=False)  # summary | hypotheses | supervisor
+    provider = Column(String(64), nullable=True)  # gemini | openai | ...
     model = Column(String(64), nullable=True)
+    prompt_version = Column(String(32), nullable=True)  # v1 | ...
     status = Column(String(32), nullable=False, default="pending")
+    text = Column(Text, nullable=True)  # analysis prose
     created_at = Column(DateTime, default=_utcnow, nullable=False)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow, nullable=False)
     result_json = Column(Text, nullable=True)  # JSON string

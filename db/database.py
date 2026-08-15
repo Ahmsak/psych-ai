@@ -22,7 +22,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _DEFAULT_DB_DIR = _PROJECT_ROOT / "data"
 _DEFAULT_DB_PATH = _DEFAULT_DB_DIR / "psychai.db"
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def get_db_path(override: str | None = None) -> Path:
